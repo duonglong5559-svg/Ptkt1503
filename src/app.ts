@@ -243,10 +243,15 @@ function renderEntryLines(signal: TradingSignal) {
     if (!price || !candleSeries) return;
     try { priceLines.push(candleSeries.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title })); } catch {}
   };
-  add(signal.entryLong, "#26a69a", LineStyle.Dashed, `Buy ${signal.entryLong?.toFixed(2)}`);
-  add(signal.entryShort, "#ef5350", LineStyle.Dashed, `Sell ${signal.entryShort?.toFixed(2)}`);
+  if (signal.direction === "long") {
+    add(signal.entryLong, "#26a69a", LineStyle.Dashed, `Buy ${signal.entryLong?.toFixed(2)}`);
+  } else if (signal.direction === "short") {
+    add(signal.entryShort, "#ef5350", LineStyle.Dashed, `Sell ${signal.entryShort?.toFixed(2)}`);
+  }
   add(signal.target, "#ffd700", LineStyle.Dotted, "Target");
-  add(signal.stopLoss, "#ff6d00", LineStyle.Dotted, "SL");
+  if (signal.direction !== "neutral") {
+    add(signal.stopLoss, "#ff6d00", LineStyle.Dotted, "SL");
+  }
 }
 
 function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
