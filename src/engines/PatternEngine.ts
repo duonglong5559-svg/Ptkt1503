@@ -65,9 +65,10 @@ export class PatternEngine {
     const start = Math.max(0, endIdx - lookback);
     if (start >= endIdx) return "neutral";
     const priceChange = candles[endIdx].close - candles[start].close;
-    const range = candles
-      .slice(start, endIdx + 1)
-      .reduce((max, c) => Math.max(max, c.high - c.low), 0);
+    const window = candles.slice(start, endIdx + 1);
+    const windowHigh = Math.max(...window.map((c) => c.high));
+    const windowLow = Math.min(...window.map((c) => c.low));
+    const range = windowHigh - windowLow;
     if (range === 0) return "neutral";
     const ratio = priceChange / range;
     if (ratio > 0.3) return "bullish";
@@ -475,10 +476,13 @@ export class PatternEngine {
       }
     }
 
+    const closedCandles = input.candles.filter((c) => c.isClosed);
+    const patternClose = closedCandles[signal.candleIndex]?.close
+      ?? closedCandles[closedCandles.length - 1]?.close
+      ?? input.candles[input.candles.length - 1]?.close;
+
     if (input.nearestSupport !== undefined && input.atr) {
-      const distToSupport = Math.abs(
-        input.candles[input.candles.length - 1]?.close - input.nearestSupport
-      );
+      const distToSupport = Math.abs(patternClose - input.nearestSupport);
       if (distToSupport < input.atr * 0.5 && signal.direction === "bullish") {
         boost += 10;
         notes.push("Near support zone (strong context)");
@@ -486,8 +490,7 @@ export class PatternEngine {
     }
 
     if (input.nearestResistance !== undefined && input.atr) {
-      const lastClose = input.candles[input.candles.length - 1]?.close;
-      const distToResist = Math.abs(lastClose - input.nearestResistance);
+      const distToResist = Math.abs(patternClose - input.nearestResistance);
       if (distToResist < input.atr * 0.5 && signal.direction === "bearish") {
         boost += 10;
         notes.push("Near resistance zone (strong context)");
@@ -495,8 +498,7 @@ export class PatternEngine {
     }
 
     if (input.nearestPivot !== undefined && input.atr) {
-      const lastClose = input.candles[input.candles.length - 1]?.close;
-      const distToPivot = Math.abs(lastClose - input.nearestPivot);
+      const distToPivot = Math.abs(patternClose - input.nearestPivot);
       if (distToPivot < input.atr * 0.8) {
         boost += 5;
         notes.push("Near pivot level");

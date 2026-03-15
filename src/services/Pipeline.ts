@@ -182,12 +182,39 @@ export class Pipeline {
     const primaryResult = this.state.timeframeResults.get(primaryTf);
     if (!primaryResult) return null;
 
+    const pivotRelation = this.recomputePivotForPrice(primaryResult, currentPrice);
+
     return this.buildUIPayload(
       currentPrice,
       this.state.lastScores,
       this.state.lastSignal,
-      primaryResult.pivotRelation
+      pivotRelation
     );
+  }
+
+  private recomputePivotForPrice(result: TimeframeAnalysisResult, currentPrice: number): PivotRelation {
+    const levels = result.pivotRelation.levels;
+    const distToPivot = currentPrice - levels.pivot;
+    const distPercent = Math.abs(distToPivot) / levels.pivot * 100;
+
+    let state = result.pivotRelation.state;
+    if (distPercent < 0.15) state = "at_pivot";
+    else if (distToPivot > 0) state = "above_pivot";
+    else state = "below_pivot";
+
+    const narrative = state === "above_pivot"
+      ? `Giá đang ở phía trên Pivot daily ${levels.pivot.toFixed(2)}, kháng cự tiếp theo ${result.pivotRelation.nearestResistance?.toFixed(2) || "N/A"}.`
+      : state === "below_pivot"
+      ? `Giá đang ở phía dưới Pivot daily ${levels.pivot.toFixed(2)}, hỗ trợ tiếp theo ${result.pivotRelation.nearestSupport?.toFixed(2) || "N/A"}.`
+      : `Giá đang quanh vùng Pivot daily ${levels.pivot.toFixed(2)}.`;
+
+    return {
+      ...result.pivotRelation,
+      state,
+      distanceToPivot: Math.round(distToPivot * 100) / 100,
+      distanceToPivotPercent: Math.round(distPercent * 100) / 100,
+      narrative,
+    };
   }
 
   private analyzeTimeframe(

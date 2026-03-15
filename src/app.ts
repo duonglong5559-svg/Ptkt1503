@@ -345,8 +345,14 @@ function updateBiasBar(l: number, s: number) {
 function updateSignalBadge(dir: string, state: string) {
   const b = document.getElementById("signal-badge")!;
   if (state === "cooldown") { b.textContent = "Cooldown"; b.className = "badge badge-neutral"; }
-  else if (dir === "long" || state.includes("long")) { b.textContent = "Lệnh Chờ Long"; b.className = "badge badge-long"; }
-  else if (dir === "short" || state.includes("short")) { b.textContent = "Lệnh Chờ Short"; b.className = "badge badge-short"; }
+  else if (state === "active_long") { b.textContent = "Active Long"; b.className = "badge badge-long"; }
+  else if (state === "active_short") { b.textContent = "Active Short"; b.className = "badge badge-short"; }
+  else if (state === "triggered_long") { b.textContent = "Triggered Long"; b.className = "badge badge-long"; }
+  else if (state === "triggered_short") { b.textContent = "Triggered Short"; b.className = "badge badge-short"; }
+  else if (state === "ready_long") { b.textContent = "Ready Long"; b.className = "badge badge-long"; }
+  else if (state === "ready_short") { b.textContent = "Ready Short"; b.className = "badge badge-short"; }
+  else if (dir === "long" || state.includes("long")) { b.textContent = "Theo dõi Long"; b.className = "badge badge-long"; }
+  else if (dir === "short" || state.includes("short")) { b.textContent = "Theo dõi Short"; b.className = "badge badge-short"; }
   else { b.textContent = "Theo dõi"; b.className = "badge badge-neutral"; }
 }
 

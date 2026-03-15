@@ -152,17 +152,18 @@ export class BrowserFeed {
   }
 
   private parseBinanceKline(symbol: string, interval: string, k: KlineRaw): Candle {
+    const closeTime = k[6];
     return {
       symbol: symbol.toUpperCase(),
       timeframe: interval,
       openTime: k[0],
-      closeTime: k[6],
+      closeTime,
       open: parseFloat(k[1]),
       high: parseFloat(k[2]),
       low: parseFloat(k[3]),
       close: parseFloat(k[4]),
       volume: parseFloat(k[5]),
-      isClosed: true,
+      isClosed: closeTime < Date.now(),
     };
   }
 

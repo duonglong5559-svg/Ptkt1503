@@ -142,6 +142,34 @@ export class SignalEngine {
         t.distanceToPricePercent < 1.0
     );
 
+    if (prev && canWatchShort && globalShortPercent >= READY_THRESHOLD) {
+      if (prev.state === "ready_short" || prev.state === "triggered_short") {
+        if (input.nearestResistance && currentPrice >= input.nearestResistance) {
+          return "triggered_short";
+        }
+        if (hasResistanceNearby && prev.entryShort && Math.abs(currentPrice - prev.entryShort) / currentPrice < 0.002) {
+          return "triggered_short";
+        }
+      }
+      if (prev.state === "triggered_short" && prev.entryShort && currentPrice < prev.entryShort) {
+        return "active_short";
+      }
+    }
+
+    if (prev && canWatchLong && globalLongPercent >= READY_THRESHOLD) {
+      if (prev.state === "ready_long" || prev.state === "triggered_long") {
+        if (input.nearestSupport && currentPrice <= input.nearestSupport) {
+          return "triggered_long";
+        }
+        if (hasSupportNearby && prev.entryLong && Math.abs(currentPrice - prev.entryLong) / currentPrice < 0.002) {
+          return "triggered_long";
+        }
+      }
+      if (prev.state === "triggered_long" && prev.entryLong && currentPrice > prev.entryLong) {
+        return "active_long";
+      }
+    }
+
     if (canWatchShort && globalShortPercent >= READY_THRESHOLD) {
       if (hasResistanceNearby || input.nearestResistance !== undefined) {
         const resistDist = input.nearestResistance
@@ -221,7 +249,8 @@ export class SignalEngine {
         t.distanceToPricePercent < 2
     );
     if (supportTL) {
-      const projected = supportTL.slope * (input.trendlineOutput.activeTrendlines.length) + supportTL.intercept;
+      const projIdx = supportTL.points.x2 + 5;
+      const projected = supportTL.slope * projIdx + supportTL.intercept;
       if (projected > 0 && projected < currentPrice) {
         candidates.push(Math.round(projected * 100) / 100);
       }
@@ -260,7 +289,8 @@ export class SignalEngine {
         t.distanceToPricePercent < 2
     );
     if (resistTL) {
-      const projected = resistTL.slope * (input.trendlineOutput.activeTrendlines.length) + resistTL.intercept;
+      const projIdx = resistTL.points.x2 + 5;
+      const projected = resistTL.slope * projIdx + resistTL.intercept;
       if (projected > currentPrice) {
         candidates.push(Math.round(projected * 100) / 100);
       }
