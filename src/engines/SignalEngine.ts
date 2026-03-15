@@ -105,19 +105,28 @@ export class SignalEngine {
 
     const bigFramesBearish = this.countBigFramesBias(timeframeScores, "bearish");
     const bigFramesBullish = this.countBigFramesBias(timeframeScores, "bullish");
+    const totalBigFrames = this.countBigFramesAvailable(timeframeScores);
+    const bigFrameMinRequired = Math.max(1, Math.min(2, Math.floor(totalBigFrames * 0.4)));
+
+    const pivotSupportsBearish =
+      pivotRelation.directionBias === "bearish" ||
+      pivotRelation.state === "below_pivot" ||
+      pivotRelation.state === "rejected_from_pivot";
+
+    const pivotSupportsBullish =
+      pivotRelation.directionBias === "bullish" ||
+      pivotRelation.state === "above_pivot" ||
+      pivotRelation.state === "approaching_pivot_from_below";
 
     const canWatchShort =
       globalShortPercent >= WATCH_THRESHOLD &&
-      bigFramesBearish >= 2 &&
-      (pivotRelation.directionBias === "bearish" ||
-        pivotRelation.state === "below_pivot" ||
-        pivotRelation.state === "rejected_from_pivot");
+      bigFramesBearish >= bigFrameMinRequired &&
+      pivotSupportsBearish;
 
     const canWatchLong =
       globalLongPercent >= WATCH_THRESHOLD &&
-      bigFramesBullish >= 2 &&
-      (pivotRelation.directionBias === "bullish" ||
-        pivotRelation.state === "above_pivot");
+      bigFramesBullish >= bigFrameMinRequired &&
+      pivotSupportsBullish;
 
     const hasResistanceNearby = trendlineOutput.activeTrendlines.some(
       (t) =>
@@ -181,6 +190,11 @@ export class SignalEngine {
     return scores.filter(
       (s) => bigFrames.includes(s.timeframe) && s.dominantBias === bias
     ).length;
+  }
+
+  private countBigFramesAvailable(scores: TimeframeScore[]): number {
+    const bigFrames = ["4h", "6h", "8h", "12h", "1d", "1w"];
+    return scores.filter((s) => bigFrames.includes(s.timeframe)).length;
   }
 
   private computeEntryLong(input: SignalEngineInput): number | undefined {
@@ -400,7 +414,13 @@ export class SignalEngine {
     const pivotStr = pivotRelation.levels.pivot.toFixed(2);
 
     if (state === "idle") {
-      return `Chưa có setup rõ ràng. Pivot: ${pivotStr}. Theo dõi thêm.`;
+      const { globalLongPercent, globalShortPercent } = input;
+      if (Math.abs(globalLongPercent - globalShortPercent) < 10) {
+        return `Thị trường đang cân bằng (Long ${globalLongPercent}% / Short ${globalShortPercent}%). Pivot: ${pivotStr}. Chờ tín hiệu rõ ràng hơn.`;
+      }
+      const leaning = globalLongPercent > globalShortPercent ? "Long" : "Short";
+      const leanPct = Math.max(globalLongPercent, globalShortPercent);
+      return `Đang nghiêng ${leaning} ${leanPct}% nhưng chưa đủ điều kiện vào lệnh. ${pivotRelation.narrative}`;
     }
 
     if (state === "invalidated") {

@@ -348,6 +348,20 @@ export class Pipeline {
     };
   }
 
+  private dedupeTrendlineCount(lines: { type: string; points: { y1: number; y2: number } }[]): number {
+    if (lines.length === 0) return 0;
+    const unique: typeof lines = [];
+    for (const line of lines) {
+      const isDup = unique.some((u) =>
+        u.type === line.type &&
+        Math.abs(u.points.y1 - line.points.y1) / (u.points.y1 || 1) < 0.005 &&
+        Math.abs(u.points.y2 - line.points.y2) / (u.points.y2 || 1) < 0.005
+      );
+      if (!isDup) unique.push(line);
+    }
+    return unique.length;
+  }
+
   private buildUIPayload(
     currentPrice: number,
     aggregated: AggregatedScore,
@@ -369,8 +383,9 @@ export class Pipeline {
       };
     }
 
-    const trendlineCount = Array.from(this.state.timeframeResults.values())
-      .reduce((sum, r) => sum + r.trendlines.trendlineCount, 0);
+    const allTrendlines = Array.from(this.state.timeframeResults.values())
+      .flatMap((r) => r.trendlines.activeTrendlines);
+    const trendlineCount = this.dedupeTrendlineCount(allTrendlines);
 
     return {
       symbol: this.state.symbol,

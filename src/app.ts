@@ -350,12 +350,16 @@ function updateTimeframeCards(payload: UIPayload) {
   row.innerHTML = "";
   for (const tf of TIMEFRAMES) {
     const d = payload.timeframes[tf];
-    const bias = d?.bias || "neutral";
     const card = document.createElement("div");
-    card.className = `tf-card${tf === selectedTf ? " active" : ""}${bias === "bullish" ? " bullish" : bias === "bearish" ? " bearish" : ""}`;
-    const cache = pipeline?.getState().candleCache.get(tf);
-    const price = cache?.length ? cache[cache.length - 1].close.toFixed(2) : "---";
-    card.innerHTML = `<span class="tf-label">${tf.toUpperCase()}</span><span class="tf-price">${price}</span>`;
+    if (d) {
+      const bias = d.bias || "neutral";
+      card.className = `tf-card${tf === selectedTf ? " active" : ""}${bias === "bullish" ? " bullish" : bias === "bearish" ? " bearish" : ""}`;
+      const dominant = d.long >= d.short ? `L${d.long}` : `S${d.short}`;
+      card.innerHTML = `<span class="tf-label">${tf.toUpperCase()}</span><span class="tf-price">${dominant}%</span>`;
+    } else {
+      card.className = `tf-card${tf === selectedTf ? " active" : ""}`;
+      card.innerHTML = `<span class="tf-label">${tf.toUpperCase()}</span><span class="tf-price" style="color:var(--text3)">---</span>`;
+    }
     card.onclick = () => switchTimeframe(tf);
     row.appendChild(card);
   }
@@ -388,7 +392,13 @@ function updateSignalSteps() {
 
 function updateConfidence() {
   const el = document.getElementById("confidence-value")!;
-  const c = pipeline?.getState().lastSignal?.overallConfidence ?? 0;
+  const sig = pipeline?.getState().lastSignal;
+  if (!sig) {
+    el.textContent = "---";
+    el.style.color = "var(--text3)";
+    return;
+  }
+  const c = sig.overallConfidence;
   el.textContent = `${c}%`;
   el.style.color = c >= 70 ? "var(--green)" : c >= 50 ? "var(--gold)" : "var(--red)";
 }
@@ -398,17 +408,36 @@ function updatePriceTag(price: number) {
 }
 
 function updateTrendlineTab(payload: UIPayload) {
-  document.getElementById("tl-count")!.textContent = String(payload.trendlineCount);
   const c = document.getElementById("trendline-list")!;
   const all: Trendline[] = [];
   for (const r of pipeline.getState().timeframeResults.values()) {
     all.push(...(r as TimeframeAnalysisResult).trendlines.activeTrendlines);
   }
-  if (!all.length) { c.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa phát hiện đường xu hướng</div>'; return; }
-  c.innerHTML = all.slice(0, 10).map((t) => {
+
+  const deduped = dedupeTrendlines(all);
+  document.getElementById("tl-count")!.textContent = String(deduped.length);
+
+  if (!deduped.length) { c.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa phát hiện đường xu hướng</div>'; return; }
+  c.innerHTML = deduped.slice(0, 8).map((t) => {
     const sup = t.type === "ascending_support";
-    return `<div class="tl-item"><div><div class="tl-type ${sup ? "support" : "resistance"}">${sup ? "▲ Hỗ trợ" : "▼ Kháng cự"}</div><div class="tl-info">Touch:${t.touches} ${t.lastInteraction} ${t.distanceToPricePercent.toFixed(1)}%</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
+    const interLabel = t.lastInteraction !== "none" ? t.lastInteraction : "";
+    return `<div class="tl-item"><div><div class="tl-type ${sup ? "support" : "resistance"}">${sup ? "▲ Hỗ trợ" : "▼ Kháng cự"}</div><div class="tl-info">Touch:${t.touches} ${interLabel} ${t.distanceToPricePercent.toFixed(1)}%</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
   }).join("");
+}
+
+function dedupeTrendlines(lines: Trendline[]): Trendline[] {
+  if (lines.length === 0) return [];
+  lines.sort((a, b) => b.strength - a.strength);
+  const result: Trendline[] = [];
+  for (const line of lines) {
+    const isDuplicate = result.some((existing) =>
+      existing.type === line.type &&
+      Math.abs(existing.points.y1 - line.points.y1) / existing.points.y1 < 0.005 &&
+      Math.abs(existing.points.y2 - line.points.y2) / existing.points.y2 < 0.005
+    );
+    if (!isDuplicate) result.push(line);
+  }
+  return result;
 }
 
 function updateChartAnnotations(payload: UIPayload) {
