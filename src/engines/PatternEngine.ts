@@ -36,6 +36,7 @@ export class PatternEngine {
 
     this.detectDoji(closedCandles, metrics, lastIdx, input, patterns);
     this.detectHammer(closedCandles, metrics, lastIdx, input, patterns);
+    this.detectInvertedHammer(closedCandles, metrics, lastIdx, input, patterns);
     this.detectShootingStar(closedCandles, metrics, lastIdx, input, patterns);
     this.detectBullishEngulfing(closedCandles, metrics, lastIdx, input, patterns);
     this.detectBearishEngulfing(closedCandles, metrics, lastIdx, input, patterns);
@@ -143,6 +144,39 @@ export class PatternEngine {
       notes: [
         `Lower wick ${(m.lowerRatio * 100).toFixed(1)}% of range`,
         `Prior trend: ${trend}`,
+      ],
+    });
+  }
+
+  private detectInvertedHammer(
+    candles: Candle[],
+    metrics: CandleMetrics[],
+    idx: number,
+    input: PatternEngineInput,
+    out: PatternSignal[]
+  ): void {
+    const m = metrics[idx];
+    if (m.body === 0 && m.range === 0) return;
+    if (m.bodyRatio > 0.35) return;
+    if (m.upperWick < HAMMER_LOWER_WICK_RATIO * m.body) return;
+    if (m.lowerWick > m.body * 0.5) return;
+
+    const trend = this.recentTrend(candles, idx);
+    if (trend !== "bearish") return;
+
+    let strength = 50;
+    if (trend === "bearish") strength = 62;
+
+    out.push({
+      pattern: "inverted_hammer",
+      direction: "bullish",
+      strength,
+      candleIndex: idx,
+      isConfirmed: candles[idx].isClosed,
+      contextBoost: 0,
+      notes: [
+        `Upper wick ${(m.upperRatio * 100).toFixed(1)}% of range`,
+        `Prior trend: ${trend} (required for inverted hammer)`,
       ],
     });
   }

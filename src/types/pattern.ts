@@ -1,6 +1,7 @@
 export type PatternName =
   | "doji"
   | "hammer"
+  | "inverted_hammer"
   | "shooting_star"
   | "bullish_engulfing"
   | "bearish_engulfing"

@@ -1,6 +1,6 @@
 import "./styles.css";
 import { createChart, IChartApi, ISeriesApi, UTCTimestamp, LineStyle, CandlestickData, LineData } from "lightweight-charts";
-import { Pipeline } from "./services/Pipeline";
+import { Pipeline, TimeframeAnalysisResult } from "./services/Pipeline";
 import { BrowserFeed } from "./services/BrowserFeed";
 import { CandleStateManager } from "./services/CandleStateManager";
 import { Candle, UIPayload, PatternSignal, Trendline, TradingSignal } from "./types";
@@ -16,6 +16,7 @@ let candleManager: CandleStateManager;
 let chart: IChartApi;
 let candleSeries: ISeriesApi<"Candlestick">;
 let trendlineSeriesList: ISeriesApi<"Line">[] = [];
+let priceLines: any[] = [];
 let lastPayload: UIPayload | null = null;
 let currentPrice = 0;
 let chartCandleCache: Candle[] = [];
@@ -81,11 +82,20 @@ function setupChart() {
       horzLines: { color: "rgba(255,255,255,0.04)" },
     },
     crosshair: { mode: 0 },
-    rightPriceScale: { borderColor: "rgba(255,255,255,0.1)" },
+    rightPriceScale: {
+      borderColor: "rgba(255,255,255,0.1)",
+      scaleMargins: { top: 0.1, bottom: 0.1 },
+    },
     timeScale: {
       borderColor: "rgba(255,255,255,0.1)",
       timeVisible: true,
       secondsVisible: false,
+    },
+    watermark: {
+      visible: true,
+      text: "Crypto and Forex Trading",
+      color: "rgba(255,255,255,0.04)",
+      fontSize: 18,
     },
   });
 
@@ -139,6 +149,7 @@ function renderPatternMarkers(patterns: PatternSignal[], candles: Candle[]) {
     const nameMap: Record<string, string> = {
       doji: "Doji",
       hammer: "Hammer",
+      inverted_hammer: "Inverted Hammer",
       shooting_star: "Shooting Star",
       bullish_engulfing: "Bullish Engulfing",
       bearish_engulfing: "Bearish Engulfing",
@@ -162,38 +173,51 @@ function renderPatternMarkers(patterns: PatternSignal[], candles: Candle[]) {
 }
 
 function renderEntryLines(signal: TradingSignal) {
-  // Remove old price lines by recreating them (lightweight-charts limitation)
-  // We'll just create new ones each time
+  for (const pl of priceLines) {
+    try { candleSeries.removePriceLine(pl); } catch (_) {}
+  }
+  priceLines = [];
+
   try {
     if (signal.entryLong) {
-      candleSeries.createPriceLine({
+      priceLines.push(candleSeries.createPriceLine({
         price: signal.entryLong,
         color: "#26a69a",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
         title: `Buy ${signal.entryLong.toFixed(2)}`,
-      });
+      }));
     }
     if (signal.entryShort) {
-      candleSeries.createPriceLine({
+      priceLines.push(candleSeries.createPriceLine({
         price: signal.entryShort,
         color: "#ef5350",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
         title: `Sell ${signal.entryShort.toFixed(2)}`,
-      });
+      }));
     }
     if (signal.target) {
-      candleSeries.createPriceLine({
+      priceLines.push(candleSeries.createPriceLine({
         price: signal.target,
         color: "#ffd700",
         lineWidth: 1,
         lineStyle: LineStyle.Dotted,
         axisLabelVisible: true,
         title: `Target ${signal.target.toFixed(2)}`,
-      });
+      }));
+    }
+    if (signal.stopLoss) {
+      priceLines.push(candleSeries.createPriceLine({
+        price: signal.stopLoss,
+        color: "#ff6d00",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: `SL ${signal.stopLoss.toFixed(2)}`,
+      }));
     }
   } catch (_) {}
 }
@@ -205,25 +229,39 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
   trendlineSeriesList = [];
 
   const closed = candles.filter((c) => c.isClosed);
-  for (const tl of trendlines.slice(0, 5)) {
-    const i1 = tl.points.x1;
-    const i2 = tl.points.x2;
-    if (i1 < 0 || i2 < 0 || i1 >= closed.length || i2 >= closed.length) continue;
+  if (closed.length === 0) return;
 
-    const color = tl.type === "ascending_support" ? "rgba(38,166,154,0.6)" : "rgba(239,83,80,0.6)";
+  for (const tl of trendlines.slice(0, 5)) {
+    const i1 = Math.max(0, Math.min(tl.points.x1, closed.length - 1));
+    const i2 = Math.max(0, Math.min(tl.points.x2, closed.length - 1));
+    if (i1 === i2) continue;
+
+    const color = tl.type === "ascending_support" ? "rgba(38,166,154,0.7)" : "rgba(239,83,80,0.7)";
     const series = chart.addLineSeries({
       color,
       lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
+      lineStyle: LineStyle.LargeDashed,
       crosshairMarkerVisible: false,
       priceLineVisible: false,
       lastValueVisible: false,
     });
 
+    const extendBars = Math.min(20, closed.length - i2);
+    const extIdx = Math.min(i2 + extendBars, closed.length - 1);
+    const projectedPrice = tl.slope * extIdx + tl.intercept;
+
     const data: LineData[] = [
       { time: (closed[i1].openTime / 1000) as UTCTimestamp, value: tl.points.y1 },
       { time: (closed[i2].openTime / 1000) as UTCTimestamp, value: tl.points.y2 },
     ];
+
+    if (extIdx > i2 && extIdx < closed.length && projectedPrice > 0) {
+      data.push({
+        time: (closed[extIdx].openTime / 1000) as UTCTimestamp,
+        value: projectedPrice,
+      });
+    }
+
     series.setData(data);
     trendlineSeriesList.push(series);
   }
@@ -370,7 +408,7 @@ function updateTrendlineTab(payload: UIPayload) {
   document.getElementById("tl-count")!.textContent = String(payload.trendlineCount);
 
   const container = document.getElementById("trendline-list")!;
-  const results = Array.from(pipeline.getState().timeframeResults.values());
+  const results: TimeframeAnalysisResult[] = Array.from(pipeline.getState().timeframeResults.values());
   const allTL: Trendline[] = [];
   for (const r of results) {
     allTL.push(...r.trendlines.activeTrendlines);
@@ -394,7 +432,7 @@ function updateTrendlineTab(payload: UIPayload) {
 }
 
 function updateChartAnnotations(payload: UIPayload) {
-  const tfResult = pipeline.getState().timeframeResults.get(selectedTf);
+  const tfResult: TimeframeAnalysisResult | undefined = pipeline.getState().timeframeResults.get(selectedTf);
   const signal = pipeline.getState().lastSignal;
 
   if (tfResult && chartCandleCache.length > 0) {
@@ -528,15 +566,6 @@ function showLoading(show: boolean) {
   const el = document.getElementById("loading-overlay")!;
   if (show) el.classList.remove("hidden");
   else el.classList.add("hidden");
-}
-
-// ── Extended Pipeline State (expose timeframeResults) ───────
-declare module "./services/Pipeline" {
-  interface Pipeline {
-    getState(): import("./services/Pipeline").PipelineState & {
-      timeframeResults: Map<string, any>;
-    };
-  }
 }
 
 // ── Start ───────────────────────────────────────────────────
