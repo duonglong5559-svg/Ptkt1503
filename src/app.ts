@@ -1,5 +1,9 @@
 import "./styles.css";
-import { createChart, IChartApi, ISeriesApi, UTCTimestamp, LineStyle, CandlestickData, LineData } from "lightweight-charts";
+import {
+  createChart, IChartApi, ISeriesApi, UTCTimestamp, LineStyle,
+  CandlestickData, LineData, CandlestickSeries, LineSeries,
+  SeriesMarker, createSeriesMarkers, ISeriesMarkersPluginApi,
+} from "lightweight-charts";
 import { Pipeline, TimeframeAnalysisResult } from "./services/Pipeline";
 import { BrowserFeed } from "./services/BrowserFeed";
 import { CandleStateManager } from "./services/CandleStateManager";
@@ -15,6 +19,7 @@ let feed: BrowserFeed;
 let candleManager: CandleStateManager;
 let chart: IChartApi | null = null;
 let candleSeries: ISeriesApi<"Candlestick"> | null = null;
+let markersPlugin: ISeriesMarkersPluginApi<any> | null = null;
 let trendlineSeriesList: ISeriesApi<"Line">[] = [];
 let priceLines: any[] = [];
 let lastPayload: UIPayload | null = null;
@@ -144,10 +149,11 @@ function setupChart() {
     watermark: { visible: true, text: "Crypto and Forex Trading", color: "rgba(255,255,255,0.04)", fontSize: 16 },
   });
 
-  candleSeries = chart.addCandlestickSeries({
+  candleSeries = chart.addSeries(CandlestickSeries, {
     upColor: "#26a69a", downColor: "#ef5350", borderVisible: false,
     wickUpColor: "#26a69a", wickDownColor: "#ef5350",
   });
+  markersPlugin = createSeriesMarkers(candleSeries);
 
   new ResizeObserver((entries) => {
     if (!chart) return;
@@ -179,7 +185,7 @@ function updateChartCandle(candle: Candle) {
 }
 
 function renderPatternMarkers(patterns: PatternSignal[], candles: Candle[]) {
-  if (!candleSeries) return;
+  if (!markersPlugin) return;
   const closed = candles.filter((c) => c.isClosed);
   const nameMap: Record<string, string> = {
     doji: "Doji", hammer: "Hammer", inverted_hammer: "Inv Hammer",
@@ -187,7 +193,7 @@ function renderPatternMarkers(patterns: PatternSignal[], candles: Candle[]) {
     bearish_engulfing: "Bear Engulf", morning_star: "Morn Star",
     evening_star: "Eve Star", three_white_soldiers: "3WS", three_black_crows: "3BC",
   };
-  const markers: any[] = [];
+  const markers: SeriesMarker<UTCTimestamp>[] = [];
   for (const p of patterns) {
     if (p.candleIndex < 0 || p.candleIndex >= closed.length) continue;
     const c = closed[p.candleIndex];
@@ -200,8 +206,8 @@ function renderPatternMarkers(patterns: PatternSignal[], candles: Candle[]) {
       text: nameMap[p.pattern] || p.pattern,
     });
   }
-  markers.sort((a: any, b: any) => (a.time as number) - (b.time as number));
-  candleSeries.setMarkers(markers);
+  markers.sort((a, b) => (a.time as number) - (b.time as number));
+  markersPlugin.setMarkers(markers);
 }
 
 function renderEntryLines(signal: TradingSignal) {
@@ -229,7 +235,7 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
     const i2 = Math.max(0, Math.min(tl.points.x2, closed.length - 1));
     if (i1 === i2) continue;
     const color = tl.type === "ascending_support" ? "rgba(38,166,154,0.7)" : "rgba(239,83,80,0.7)";
-    const series = chart.addLineSeries({
+    const series = chart.addSeries(LineSeries, {
       color, lineWidth: 1, lineStyle: LineStyle.LargeDashed,
       crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
     });
