@@ -5,15 +5,9 @@ import { BrowserFeed } from "./services/BrowserFeed";
 import { CandleStateManager } from "./services/CandleStateManager";
 import { Candle, UIPayload, PatternSignal, Trendline, TradingSignal } from "./types";
 
-const CRYPTO_TIMEFRAMES = ["15m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"];
-const FOREX_TIMEFRAMES = ["15m", "1h", "4h", "1d"];
+const TIMEFRAMES = ["15m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"];
 const CANDLE_LIMIT = 150;
 
-function getTimeframes(symbol: string): string[] {
-  return symbol.toUpperCase().startsWith("XAU") ? FOREX_TIMEFRAMES : CRYPTO_TIMEFRAMES;
-}
-
-let TIMEFRAMES = CRYPTO_TIMEFRAMES;
 let currentSymbol = "BTCUSDT";
 let selectedTf = "1h";
 let pipeline: Pipeline;
@@ -41,7 +35,6 @@ async function loadSymbol(symbol: string) {
 
   try {
     currentSymbol = symbol;
-    TIMEFRAMES = getTimeframes(symbol);
 
     if (feed) feed.close();
     feed = new BrowserFeed();
@@ -376,7 +369,7 @@ function loadNewsIfNeeded() {
   if (newsLoaded) return;
   newsLoaded = true;
   const f = document.getElementById("news-filters")!;
-  f.innerHTML = ["Tất cả","Bitcoin","Ethereum","Gold"].map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}">${c}</button>`).join("");
+  f.innerHTML = ["Tất cả","Bitcoin","Ethereum","Gold/PAXG"].map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}">${c}</button>`).join("");
   f.onclick = (e) => { const b = (e.target as HTMLElement).closest(".news-filter"); if (!b) return; f.querySelectorAll(".news-filter").forEach(x => x.classList.remove("active")); b.classList.add("active"); };
   fetchNews();
 }
@@ -431,13 +424,8 @@ function setupSymbolSelector() {
   const s = document.getElementById("symbol-select") as HTMLSelectElement;
   s.value = currentSymbol;
   s.onchange = () => {
-    const newSymbol = s.value;
-    const newTfs = getTimeframes(newSymbol);
-    if (!newTfs.includes(selectedTf)) {
-      selectedTf = "1h";
-    }
     newsLoaded = false;
-    loadSymbol(newSymbol);
+    loadSymbol(s.value);
   };
 }
 

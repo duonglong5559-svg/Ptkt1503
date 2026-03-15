@@ -34,15 +34,11 @@ const TF_TO_OKX: Record<string, string> = {
 const OKX_TF_REVERSE: Record<string, string> = {};
 for (const [k, v] of Object.entries(TF_TO_OKX)) OKX_TF_REVERSE[v] = k;
 
-function isForexSymbol(symbol: string): boolean {
-  return symbol.toUpperCase().startsWith("XAU");
-}
-
 function toOkxInstId(symbol: string): string {
   const map: Record<string, string> = {
     BTCUSDT: "BTC-USDT-SWAP",
     ETHUSDT: "ETH-USDT-SWAP",
-    XAUUSD: "XAU-USD",
+    PAXGUSDT: "PAXG-USDT",
   };
   return map[symbol.toUpperCase()] || symbol.replace("USDT", "-USDT-SWAP");
 }
@@ -57,9 +53,6 @@ export class BrowserFeed {
   private provider: "binance" | "okx" = "binance";
 
   async fetchKlines(symbol: string, interval: string, limit = 200): Promise<Candle[]> {
-    if (isForexSymbol(symbol)) {
-      return await this.fetchOKX(symbol, interval, limit);
-    }
     try {
       return await this.fetchBinanceVision(symbol, interval, limit);
     } catch (e1) {
@@ -74,9 +67,6 @@ export class BrowserFeed {
   }
 
   async fetchPrice(symbol: string): Promise<number> {
-    if (isForexSymbol(symbol)) {
-      return await this.fetchOKXPrice(symbol);
-    }
     try {
       const res = await fetchWithTimeout(`${BINANCE_VISION}/ticker/price?symbol=${symbol.toUpperCase()}`);
       if (!res.ok) throw new Error(`${res.status}`);
@@ -100,12 +90,6 @@ export class BrowserFeed {
     this.onCandle = onCandle;
     this.currentSymbol = symbol;
     this.currentTfs = timeframes;
-
-    if (isForexSymbol(symbol)) {
-      this.provider = "okx";
-      this.connectOKX(symbol, timeframes);
-      return;
-    }
 
     this.tryBinanceWS(symbol, timeframes)
       .catch(() => {
