@@ -26,8 +26,8 @@ export class TrendlineEngine {
 
     const candidates: Trendline[] = [];
 
-    const swingLows = swings.filter((s) => s.type === "low");
-    const swingHighs = swings.filter((s) => s.type === "high");
+    const swingLows = swings.filter((s) => s.type === "low").slice(-15);
+    const swingHighs = swings.filter((s) => s.type === "high").slice(-15);
 
     this.buildAscendingLines(swingLows, candles, currentPrice, currentIndex, candidates);
     this.buildDescendingLines(swingHighs, candles, currentPrice, currentIndex, candidates);

@@ -5,6 +5,13 @@ const BINANCE_FAPI = "https://fapi.binance.com/fapi/v1";
 const OKX_API = "https://www.okx.com/api/v5";
 
 const OKX_WS = "wss://ws.okx.com:8443/ws/v5/public";
+const FETCH_TIMEOUT = 12000;
+
+function fetchWithTimeout(url: string, timeout = FETCH_TIMEOUT): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 type KlineRaw = [
   number, string, string, string, string, string,
@@ -63,19 +70,19 @@ export class BrowserFeed {
 
   async fetchPrice(symbol: string): Promise<number> {
     try {
-      const res = await fetch(`${BINANCE_VISION}/ticker/price?symbol=${symbol.toUpperCase()}`);
+      const res = await fetchWithTimeout(`${BINANCE_VISION}/ticker/price?symbol=${symbol.toUpperCase()}`);
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       return parseFloat(data.price);
     } catch {
       try {
-        const res = await fetch(`${BINANCE_FAPI}/ticker/price?symbol=${symbol.toUpperCase()}`);
+        const res = await fetchWithTimeout(`${BINANCE_FAPI}/ticker/price?symbol=${symbol.toUpperCase()}`);
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
         return parseFloat(data.price);
       } catch {
         const instId = toOkxInstId(symbol);
-        const res = await fetch(`${OKX_API}/market/ticker?instId=${instId}`);
+        const res = await fetchWithTimeout(`${OKX_API}/market/ticker?instId=${instId}`);
         if (!res.ok) throw new Error(`OKX ${res.status}`);
         const data = await res.json();
         if (data.data && data.data[0]) return parseFloat(data.data[0].last);
@@ -107,7 +114,7 @@ export class BrowserFeed {
 
   private async fetchBinanceVision(symbol: string, interval: string, limit: number): Promise<Candle[]> {
     const url = `${BINANCE_VISION}/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`Binance Vision ${res.status}`);
     const data: KlineRaw[] = await res.json();
     return data.map((k) => this.parseBinanceKline(symbol, interval, k));
@@ -115,7 +122,7 @@ export class BrowserFeed {
 
   private async fetchBinanceFutures(symbol: string, interval: string, limit: number): Promise<Candle[]> {
     const url = `${BINANCE_FAPI}/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`Binance Futures ${res.status}`);
     const data: KlineRaw[] = await res.json();
     return data.map((k) => this.parseBinanceKline(symbol, interval, k));
@@ -125,7 +132,7 @@ export class BrowserFeed {
     const instId = toOkxInstId(symbol);
     const bar = TF_TO_OKX[interval] || interval;
     const url = `${OKX_API}/market/candles?instId=${instId}&bar=${bar}&limit=${Math.min(limit, 300)}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`OKX ${res.status}`);
     const data = await res.json();
     if (!data.data) throw new Error("No OKX data");
