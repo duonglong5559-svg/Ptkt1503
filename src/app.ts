@@ -5,9 +5,15 @@ import { BrowserFeed } from "./services/BrowserFeed";
 import { CandleStateManager } from "./services/CandleStateManager";
 import { Candle, UIPayload, PatternSignal, Trendline, TradingSignal } from "./types";
 
-const TIMEFRAMES = ["15m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"];
+const CRYPTO_TIMEFRAMES = ["15m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"];
+const FOREX_TIMEFRAMES = ["15m", "1h", "4h", "1d"];
 const CANDLE_LIMIT = 150;
 
+function getTimeframes(symbol: string): string[] {
+  return symbol.toUpperCase().startsWith("XAU") ? FOREX_TIMEFRAMES : CRYPTO_TIMEFRAMES;
+}
+
+let TIMEFRAMES = CRYPTO_TIMEFRAMES;
 let currentSymbol = "BTCUSDT";
 let selectedTf = "1h";
 let pipeline: Pipeline;
@@ -33,6 +39,7 @@ async function init() {
 async function loadSymbol(symbol: string) {
   showLoading(true, "Đang kết nối...");
   currentSymbol = symbol;
+  TIMEFRAMES = getTimeframes(symbol);
 
   if (feed) feed.close();
   feed = new BrowserFeed();
@@ -40,7 +47,6 @@ async function loadSymbol(symbol: string) {
   candleManager = new CandleStateManager();
   chartCandleCache = [];
 
-  // Fetch all timeframes in PARALLEL with timeout
   showLoading(true, "Đang tải dữ liệu nến...");
   const results = await Promise.allSettled(
     TIMEFRAMES.map(async (tf) => {
@@ -57,6 +63,8 @@ async function loadSymbol(symbol: string) {
       if (r.value.tf === selectedTf) {
         chartCandleCache = r.value.candles;
       }
+    } else if (r.status === "rejected") {
+      log(`TF fetch failed: ${r.reason}`);
     }
   }
 
@@ -361,7 +369,7 @@ function loadNewsIfNeeded() {
   if (newsLoaded) return;
   newsLoaded = true;
   const f = document.getElementById("news-filters")!;
-  f.innerHTML = ["Tất cả","Bitcoin","Ethereum","Solana","XRP"].map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}">${c}</button>`).join("");
+  f.innerHTML = ["Tất cả","Bitcoin","Ethereum","Gold"].map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}">${c}</button>`).join("");
   f.onclick = (e) => { const b = (e.target as HTMLElement).closest(".news-filter"); if (!b) return; f.querySelectorAll(".news-filter").forEach(x => x.classList.remove("active")); b.classList.add("active"); };
   fetchNews();
 }
@@ -415,14 +423,33 @@ function setupTabs() {
 function setupSymbolSelector() {
   const s = document.getElementById("symbol-select") as HTMLSelectElement;
   s.value = currentSymbol;
-  s.onchange = () => loadSymbol(s.value);
+  s.onchange = () => {
+    const newSymbol = s.value;
+    const newTfs = getTimeframes(newSymbol);
+    if (!newTfs.includes(selectedTf)) {
+      selectedTf = "1h";
+    }
+    newsLoaded = false;
+    loadSymbol(newSymbol);
+  };
 }
 
 // ── Loading / Error ─────────────────────────────────────────
+let loadingTimeout: any = null;
 function showLoading(show: boolean, msg?: string) {
   const el = document.getElementById("loading-overlay")!;
-  if (show) { el.classList.remove("hidden"); const p = el.querySelector("p"); if (p && msg) p.textContent = msg; }
-  else el.classList.add("hidden");
+  if (loadingTimeout) { clearTimeout(loadingTimeout); loadingTimeout = null; }
+  if (show) {
+    el.classList.remove("hidden");
+    const p = el.querySelector("p");
+    if (p && msg) p.textContent = msg;
+    loadingTimeout = setTimeout(() => {
+      el.classList.add("hidden");
+      log("Loading timeout - hiding overlay");
+    }, 30000);
+  } else {
+    el.classList.add("hidden");
+  }
 }
 function showError(msg: string) {
   let el = document.getElementById("error-banner");

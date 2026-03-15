@@ -5,7 +5,7 @@ const BINANCE_FAPI = "https://fapi.binance.com/fapi/v1";
 const OKX_API = "https://www.okx.com/api/v5";
 
 const OKX_WS = "wss://ws.okx.com:8443/ws/v5/public";
-const FETCH_TIMEOUT = 12000;
+const FETCH_TIMEOUT = 15000;
 
 function fetchWithTimeout(url: string, timeout = FETCH_TIMEOUT): Promise<Response> {
   const controller = new AbortController();
@@ -34,13 +34,15 @@ const TF_TO_OKX: Record<string, string> = {
 const OKX_TF_REVERSE: Record<string, string> = {};
 for (const [k, v] of Object.entries(TF_TO_OKX)) OKX_TF_REVERSE[v] = k;
 
+function isForexSymbol(symbol: string): boolean {
+  return symbol.toUpperCase().startsWith("XAU");
+}
+
 function toOkxInstId(symbol: string): string {
   const map: Record<string, string> = {
     BTCUSDT: "BTC-USDT-SWAP",
     ETHUSDT: "ETH-USDT-SWAP",
-    SOLUSDT: "SOL-USDT-SWAP",
-    BNBUSDT: "BNB-USDT-SWAP",
-    XAUUSDT: "XAU-USD",
+    XAUUSD: "XAU-USD",
   };
   return map[symbol.toUpperCase()] || symbol.replace("USDT", "-USDT-SWAP");
 }
@@ -55,6 +57,9 @@ export class BrowserFeed {
   private provider: "binance" | "okx" = "binance";
 
   async fetchKlines(symbol: string, interval: string, limit = 200): Promise<Candle[]> {
+    if (isForexSymbol(symbol)) {
+      return await this.fetchOKX(symbol, interval, limit);
+    }
     try {
       return await this.fetchBinanceVision(symbol, interval, limit);
     } catch (e1) {
@@ -69,6 +74,9 @@ export class BrowserFeed {
   }
 
   async fetchPrice(symbol: string): Promise<number> {
+    if (isForexSymbol(symbol)) {
+      return await this.fetchOKXPrice(symbol);
+    }
     try {
       const res = await fetchWithTimeout(`${BINANCE_VISION}/ticker/price?symbol=${symbol.toUpperCase()}`);
       if (!res.ok) throw new Error(`${res.status}`);
@@ -81,20 +89,30 @@ export class BrowserFeed {
         const data = await res.json();
         return parseFloat(data.price);
       } catch {
-        const instId = toOkxInstId(symbol);
-        const res = await fetchWithTimeout(`${OKX_API}/market/ticker?instId=${instId}`);
-        if (!res.ok) throw new Error(`OKX ${res.status}`);
-        const data = await res.json();
-        if (data.data && data.data[0]) return parseFloat(data.data[0].last);
-        throw new Error("No OKX price data");
+        return await this.fetchOKXPrice(symbol);
       }
     }
+  }
+
+  private async fetchOKXPrice(symbol: string): Promise<number> {
+    const instId = toOkxInstId(symbol);
+    const res = await fetchWithTimeout(`${OKX_API}/market/ticker?instId=${instId}`);
+    if (!res.ok) throw new Error(`OKX ${res.status}`);
+    const data = await res.json();
+    if (data.data && data.data[0]) return parseFloat(data.data[0].last);
+    throw new Error("No OKX price data");
   }
 
   subscribe(symbol: string, timeframes: string[], onCandle: BrowserCandleHandler): void {
     this.onCandle = onCandle;
     this.currentSymbol = symbol;
     this.currentTfs = timeframes;
+
+    if (isForexSymbol(symbol)) {
+      this.provider = "okx";
+      this.connectOKX(symbol, timeframes);
+      return;
+    }
 
     this.tryBinanceWS(symbol, timeframes)
       .catch(() => {
@@ -135,21 +153,24 @@ export class BrowserFeed {
     const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`OKX ${res.status}`);
     const data = await res.json();
-    if (!data.data) throw new Error("No OKX data");
+    if (!data.data || data.data.length === 0) throw new Error("No OKX data");
 
     return data.data
-      .map((k: string[]) => ({
-        symbol: symbol.toUpperCase(),
-        timeframe: interval,
-        openTime: parseInt(k[0]),
-        closeTime: parseInt(k[0]) + this.tfToMs(interval),
-        open: parseFloat(k[1]),
-        high: parseFloat(k[2]),
-        low: parseFloat(k[3]),
-        close: parseFloat(k[4]),
-        volume: parseFloat(k[5]),
-        isClosed: k[8] === "1",
-      } as Candle))
+      .map((k: string[]) => {
+        const confirm = k.length > 8 ? k[8] : "1";
+        return {
+          symbol: symbol.toUpperCase(),
+          timeframe: interval,
+          openTime: parseInt(k[0]),
+          closeTime: parseInt(k[0]) + this.tfToMs(interval),
+          open: parseFloat(k[1]),
+          high: parseFloat(k[2]),
+          low: parseFloat(k[3]),
+          close: parseFloat(k[4]),
+          volume: parseFloat(k[5]) || 0,
+          isClosed: confirm === "1",
+        } as Candle;
+      })
       .reverse();
   }
 
@@ -255,6 +276,7 @@ export class BrowserFeed {
         const tf = OKX_TF_REVERSE[barMatch] || barMatch.toLowerCase();
 
         for (const k of msg.data) {
+          const confirm = k.length > 8 ? k[8] : "0";
           const candle: Candle = {
             symbol: symbol.toUpperCase(),
             timeframe: tf,
@@ -264,8 +286,8 @@ export class BrowserFeed {
             high: parseFloat(k[2]),
             low: parseFloat(k[3]),
             close: parseFloat(k[4]),
-            volume: parseFloat(k[5]),
-            isClosed: k[8] === "1",
+            volume: parseFloat(k[5]) || 0,
+            isClosed: confirm === "1",
           };
           this.onCandle?.(symbol.toUpperCase(), tf, candle, candle.isClosed);
         }
