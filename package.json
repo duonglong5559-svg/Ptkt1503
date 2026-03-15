@@ -4,16 +4,23 @@
   "description": "Technical analysis engine with PatternEngine, PivotEngine, TrendlineEngine, ScoringEngine, SignalEngine",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "start": "ts-node src/index.ts",
-    "test": "ts-node tests/run-tests.ts",
-    "dev": "ts-node src/index.ts"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:node": "tsc",
+    "start:node": "ts-node src/index.ts",
+    "test": "ts-node tests/run-tests.ts"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/duonglong5559-svg/Ptkt1503.git"
   },
-  "keywords": ["trading", "technical-analysis", "binance", "futures"],
+  "keywords": [
+    "trading",
+    "technical-analysis",
+    "binance",
+    "futures"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -23,7 +30,9 @@
   "devDependencies": {
     "@types/node": "^22.13.5",
     "@types/ws": "^8.5.14",
+    "lightweight-charts": "^5.1.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vite": "^8.0.0"
   }
 }

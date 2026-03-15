@@ -14,6 +14,13 @@ export type SignalState =
   | "active_short"
   | "invalidated";
 
+export type SignalStep = {
+  step: number;
+  title: string;
+  description: string;
+  status: "completed" | "active" | "pending";
+};
+
 export type TradingSignal = {
   symbol: string;
 
@@ -34,6 +41,8 @@ export type TradingSignal = {
 
   summaryText: string;
   detailText: string[];
+  steps: SignalStep[];
+  overallConfidence: number;
 
   updatedAt: number;
   cooldownUntil?: number;

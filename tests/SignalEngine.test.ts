@@ -131,6 +131,8 @@ export function testSignalEngine(assert: AssertFn) {
 
     assert(result.summaryText.length > 0, "Summary text is non-empty");
     assert(result.detailText.length > 0, "Detail text is non-empty");
+    assert(result.steps.length === 4, "Signal has 4 steps");
+    assert(result.overallConfidence > 0, "Overall confidence is positive");
   }
 
   // Test: cooldown prevents signal

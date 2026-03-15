@@ -2,6 +2,7 @@ import {
   SignalEngineInput,
   TradingSignal,
   SignalState,
+  SignalStep,
   TimeframeScore,
   PivotRelation,
   TrendlineEngineOutput,
@@ -54,6 +55,8 @@ export class SignalEngine {
 
     const summaryText = this.buildSummary(input, finalState, direction, entryLong, entryShort, target);
     const detailText = this.buildDetails(input, finalState, direction, entryLong, entryShort, stopLoss, takeProfit, target);
+    const steps = this.buildSteps(input, finalState, direction, entryLong, entryShort, stopLoss);
+    const overallConfidence = this.computeOverallConfidence(input, finalState, direction);
 
     const cooldownUntil =
       finalState === "invalidated"
@@ -75,6 +78,8 @@ export class SignalEngine {
       invalidationReason,
       summaryText,
       detailText,
+      steps,
+      overallConfidence,
       updatedAt: currentTime,
       cooldownUntil,
     };
@@ -422,6 +427,101 @@ export class SignalEngine {
     }
 
     return parts.join(" ");
+  }
+
+  private buildSteps(
+    input: SignalEngineInput,
+    state: SignalState,
+    direction: "long" | "short" | "neutral",
+    entryLong?: number,
+    entryShort?: number,
+    stopLoss?: number
+  ): SignalStep[] {
+    const { globalLongPercent, globalShortPercent, pivotRelation, currentPrice, nearestSupport, nearestResistance } = input;
+    const isLong = direction === "long";
+    const pct = isLong ? globalLongPercent : globalShortPercent;
+
+    const step1Status: SignalStep["status"] =
+      (state !== "idle" && state !== "invalidated") ? "completed" : (pct >= 55 ? "active" : "pending");
+
+    const step2Status: SignalStep["status"] =
+      (state === "ready_long" || state === "ready_short") ? "completed" :
+      (state === "watch_long" || state === "watch_short") ? "active" : "pending";
+
+    const step3Status: SignalStep["status"] =
+      (state === "ready_long" || state === "ready_short") ? "active" : "pending";
+
+    const step4Status: SignalStep["status"] = "pending";
+
+    if (direction === "neutral") {
+      return [
+        { step: 1, title: "Xác nhận xu hướng đa khung", description: `Chờ bias rõ ràng hơn. Hiện tại: Long ${globalLongPercent}% / Short ${globalShortPercent}%`, status: "pending" },
+        { step: 2, title: "Chờ xác nhận mô hình nến", description: "Theo dõi nến tiếp theo", status: "pending" },
+        { step: 3, title: "Xác nhận vùng giá", description: "Chờ giá tiến vào vùng hợp lệ", status: "pending" },
+        { step: 4, title: "Vào lệnh", description: "Chờ đủ điều kiện", status: "pending" },
+      ];
+    }
+
+    const entry = isLong ? entryLong : entryShort;
+    const entryPctFromPrice = entry ? (((entry - currentPrice) / currentPrice) * 100).toFixed(1) : "?";
+    const zoneLow = isLong ? (nearestSupport || pivotRelation.levels.s1) : (pivotRelation.levels.pivot);
+    const zoneHigh = isLong ? (pivotRelation.levels.pivot) : (nearestResistance || pivotRelation.levels.r1);
+    const dirLabel = isLong ? "Long" : "Short";
+    const zoneLabel = isLong ? "Hỗ trợ" : "Kháng cự";
+    const slLabel = isLong ? "dưới Hỗ trợ" : "trên Kháng cự";
+    const slAdj = stopLoss && entry ? (((Math.abs(stopLoss - entry) / entry) * 100).toFixed(1)) : "0.6";
+
+    return [
+      {
+        step: 1,
+        title: `Xu hướng đa khung → ${dirLabel} ${pct}%`,
+        description: `Đa số khung thời gian nghiêng ${dirLabel}`,
+        status: step1Status,
+      },
+      {
+        step: 2,
+        title: "Đang chờ xác nhận mô hình nến đảo chiều",
+        description: "Theo dõi nến tiếp theo",
+        status: step2Status,
+      },
+      {
+        step: 3,
+        title: `Khi nến tiếp theo đóng cửa ${isLong ? "trên" : "dưới"} ${zoneLabel}`,
+        description: `zone: ${Math.min(zoneLow, zoneHigh).toFixed(2)} - ${Math.max(zoneLow, zoneHigh).toFixed(2)}`,
+        status: step3Status,
+      },
+      {
+        step: 4,
+        title: `Vào lệnh ${dirLabel} với Stop Loss ${slLabel} (đã điều chỉnh +${slAdj}%)`,
+        description: `Entry: ${entry?.toFixed(2) || "N/A"} (${entryPctFromPrice}%)`,
+        status: step4Status,
+      },
+    ];
+  }
+
+  private computeOverallConfidence(
+    input: SignalEngineInput,
+    state: SignalState,
+    direction: "long" | "short" | "neutral"
+  ): number {
+    if (state === "idle" || state === "invalidated" || direction === "neutral") return 30;
+
+    const { globalLongPercent, globalShortPercent, timeframeScores, trendlineOutput } = input;
+    const pct = direction === "long" ? globalLongPercent : globalShortPercent;
+
+    let conf = pct;
+
+    const aligned = timeframeScores.filter(s =>
+      (direction === "long" && s.dominantBias === "bullish") ||
+      (direction === "short" && s.dominantBias === "bearish")
+    ).length;
+    const tfBonus = Math.min(15, aligned * 3);
+    conf += tfBonus;
+
+    if (trendlineOutput.trendlineCount > 0) conf += 5;
+    if (state === "ready_long" || state === "ready_short") conf += 8;
+
+    return Math.min(99, Math.max(20, Math.round(conf)));
   }
 
   private buildDetails(

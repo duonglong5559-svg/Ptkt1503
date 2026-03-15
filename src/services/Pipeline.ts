@@ -35,7 +35,7 @@ export type PipelineState = {
   timeframeResults: Map<string, TimeframeAnalysisResult>;
 };
 
-type TimeframeAnalysisResult = {
+export type TimeframeAnalysisResult = {
   patterns: PatternEngineOutput;
   pivotRelation: PivotRelation;
   trendlines: TrendlineEngineOutput;
