@@ -8,6 +8,9 @@ import {
   TradingSignal,
   UIPayload,
   StructureState,
+  FeedHealth,
+  NewsItem,
+  createInitialFeedHealth,
 } from "../types";
 import {
   PatternEngine,
@@ -26,6 +29,7 @@ import {
   computeSRLevels,
 } from "../utils";
 import { StructureEngineOutput } from "../engines/StructureEngine";
+import { SymbolMapping } from "./SymbolMapping";
 
 export type PipelineState = {
   symbol: string;
@@ -33,6 +37,8 @@ export type PipelineState = {
   lastSignal?: TradingSignal;
   lastScores?: AggregatedScore;
   timeframeResults: Map<string, TimeframeAnalysisResult>;
+  feedHealth: FeedHealth;
+  news: NewsItem[];
 };
 
 export type TimeframeAnalysisResult = {
@@ -84,7 +90,17 @@ export class Pipeline {
       symbol,
       candleCache: new Map(),
       timeframeResults: new Map(),
+      feedHealth: createInitialFeedHealth(),
+      news: [],
     };
+  }
+
+  setFeedHealth(health: FeedHealth): void {
+    this.state.feedHealth = health;
+  }
+
+  setNews(news: NewsItem[]): void {
+    this.state.news = news;
   }
 
   getState(): PipelineState {
@@ -358,7 +374,9 @@ export class Pipeline {
 
     return {
       symbol: this.state.symbol,
+      displaySymbol: SymbolMapping.getDisplayLabel(this.state.symbol),
       currentPrice,
+      feedHealth: this.state.feedHealth,
       globalBias: {
         long: aggregated.globalLongPercent,
         short: aggregated.globalShortPercent,
@@ -369,6 +387,8 @@ export class Pipeline {
       signal: {
         state: signal.state,
         direction: signal.direction,
+        confidenceLong: signal.confidenceLong,
+        confidenceShort: signal.confidenceShort,
         entryLong: signal.entryLong,
         entryShort: signal.entryShort,
         stopLoss: signal.stopLoss,
@@ -376,9 +396,12 @@ export class Pipeline {
         target: signal.target,
         summary: signal.summaryText,
         details: signal.detailText,
+        primaryScenario: signal.primaryScenario,
+        alternativeScenario: signal.alternativeScenario,
       },
       trendlineCount,
       pivotNarrative: pivotRelation.narrative,
+      news: this.state.news,
       updatedAt: Date.now(),
     };
   }

@@ -5,27 +5,53 @@ export * from "./swing";
 export * from "./trendline";
 export * from "./scoring";
 export * from "./signal";
+export * from "./symbol";
+export * from "./feed";
+export * from "./news";
+
+export type StructureState =
+  | "uptrend"
+  | "downtrend"
+  | "range"
+  | "breakout"
+  | "breakdown"
+  | "retest_up"
+  | "retest_down"
+  | "BOS"
+  | "CHOCH"
+  | "transition";
+
+import type { FeedHealth } from "./feed";
+import type { NewsItem } from "./news";
+import type { SignalState } from "./signal";
+
+export type TimeframeBias = {
+  long: number;
+  short: number;
+  state: "bullish" | "bearish" | "mixed";
+  bias: "bullish" | "bearish" | "neutral";
+};
 
 export type UIPayload = {
   symbol: string;
+  displaySymbol: string;
   currentPrice: number;
+
+  feedHealth: FeedHealth;
+
   globalBias: {
     long: number;
     short: number;
     direction: "long" | "short" | "neutral";
   };
-  timeframes: Record<
-    string,
-    {
-      long: number;
-      short: number;
-      state: "bullish" | "bearish" | "mixed";
-      bias: "bullish" | "bearish" | "neutral";
-    }
-  >;
+
+  timeframes: Record<string, TimeframeBias>;
+
   signal: {
-    state: string;
-    direction: string;
+    state: SignalState;
+    direction: "long" | "short" | "neutral";
+    confidenceLong: number;
+    confidenceShort: number;
     entryLong?: number;
     entryShort?: number;
     stopLoss?: number;
@@ -33,18 +59,14 @@ export type UIPayload = {
     target?: number;
     summary: string;
     details: string[];
+    primaryScenario?: string;
+    alternativeScenario?: string;
   };
+
   trendlineCount: number;
   pivotNarrative: string;
+
+  news: NewsItem[];
+
   updatedAt: number;
 };
-
-export type StructureState =
-  | "HH-HL"
-  | "LH-LL"
-  | "range"
-  | "breakout"
-  | "breakdown"
-  | "retest_up"
-  | "retest_down"
-  | "transition";

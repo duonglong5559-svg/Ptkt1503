@@ -12,7 +12,8 @@ export type SignalState =
   | "triggered_short"
   | "active_long"
   | "active_short"
-  | "invalidated";
+  | "invalidated"
+  | "cooldown";
 
 export type SignalStep = {
   step: number;
@@ -43,6 +44,9 @@ export type TradingSignal = {
   detailText: string[];
   steps: SignalStep[];
   overallConfidence: number;
+
+  primaryScenario?: string;
+  alternativeScenario?: string;
 
   updatedAt: number;
   cooldownUntil?: number;

@@ -5,3 +5,4 @@ export { TrendlineEngine } from "./TrendlineEngine";
 export { StructureEngine } from "./StructureEngine";
 export { ScoringEngine } from "./ScoringEngine";
 export { SignalEngine } from "./SignalEngine";
+export { SentimentEngine } from "./SentimentEngine";

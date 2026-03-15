@@ -70,8 +70,8 @@ export class StructureEngine {
 
     if (hhCount >= 1 && hlCount >= 1) {
       return {
-        state: "HH-HL",
-        description: "Market structure bullish: Higher Highs and Higher Lows.",
+        state: "uptrend",
+        description: "Cấu trúc thị trường tăng: Đỉnh cao hơn, Đáy cao hơn.",
         isUptrend: true,
         isDowntrend: false,
         isRange: false,
@@ -80,8 +80,8 @@ export class StructureEngine {
 
     if (lhCount >= 1 && llCount >= 1) {
       return {
-        state: "LH-LL",
-        description: "Market structure bearish: Lower Highs and Lower Lows.",
+        state: "downtrend",
+        description: "Cấu trúc thị trường giảm: Đỉnh thấp hơn, Đáy thấp hơn.",
         isUptrend: false,
         isDowntrend: true,
         isRange: false,

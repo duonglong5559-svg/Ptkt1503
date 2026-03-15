@@ -7,9 +7,13 @@ import {
 import { Pipeline, TimeframeAnalysisResult } from "./services/Pipeline";
 import { BrowserFeed } from "./services/BrowserFeed";
 import { CandleStateManager } from "./services/CandleStateManager";
-import { Candle, UIPayload, PatternSignal, Trendline, TradingSignal } from "./types";
+import { FeedHealthService } from "./services/FeedHealthService";
+import { NewsService } from "./services/NewsService";
+import { SymbolMapping } from "./services/SymbolMapping";
+import { Candle, UIPayload, PatternSignal, Trendline, TradingSignal, AppPhase, computeAppPhase } from "./types";
+import { ANALYSIS_TIMEFRAMES } from "./types/symbol";
 
-const TIMEFRAMES = ["15m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"];
+const TIMEFRAMES = [...ANALYSIS_TIMEFRAMES];
 const CANDLE_LIMIT = 150;
 
 let currentSymbol = "BTCUSDT";
@@ -17,6 +21,8 @@ let selectedTf = "1h";
 let pipeline: Pipeline;
 let feed: BrowserFeed;
 let candleManager: CandleStateManager;
+let healthService: FeedHealthService;
+let newsService: NewsService;
 let chart: IChartApi | null = null;
 let candleSeries: ISeriesApi<"Candlestick"> | null = null;
 let markersPlugin: ISeriesMarkersPluginApi<any> | null = null;
@@ -29,6 +35,7 @@ let chartCandleCache: Candle[] = [];
 // ── Bootstrap ───────────────────────────────────────────────
 async function init() {
   log("App starting");
+  newsService = new NewsService();
   setupTabs();
   setupSymbolSelector();
   setupChart();
@@ -37,6 +44,7 @@ async function init() {
 
 async function loadSymbol(symbol: string) {
   showLoading(true, "Đang kết nối...");
+  healthService = new FeedHealthService();
 
   try {
     currentSymbol = symbol;
@@ -47,7 +55,10 @@ async function loadSymbol(symbol: string) {
     candleManager = new CandleStateManager();
     chartCandleCache = [];
 
+    healthService.setRestWarmup("loading");
+    updateHealthIndicator();
     showLoading(true, "Đang tải dữ liệu nến...");
+
     const results = await Promise.allSettled(
       TIMEFRAMES.map(async (tf) => {
         const candles = await feed.fetchKlines(symbol, tf, CANDLE_LIMIT);
@@ -59,6 +70,7 @@ async function loadSymbol(symbol: string) {
     for (const r of results) {
       if (r.status === "fulfilled" && r.value.candles.length > 0) {
         pipeline.initializeCache(r.value.tf, r.value.candles);
+        healthService.recordTimeframeCandleClose(r.value.tf, r.value.candles.length);
         loaded++;
         if (r.value.tf === selectedTf) {
           chartCandleCache = r.value.candles;
@@ -81,12 +93,17 @@ async function loadSymbol(symbol: string) {
     log(`Loaded ${loaded}/${TIMEFRAMES.length} timeframes`);
 
     if (loaded === 0) {
-      showError("Không thể tải dữ liệu. Nhấn nút để thử lại.", true);
+      healthService.setRestWarmup("error", "Không thể tải dữ liệu từ Binance.");
+      pipeline.setFeedHealth(healthService.getHealth());
+      showError("Không thể tải dữ liệu. Feed không khả dụng.", true);
       return;
     }
 
+    healthService.setRestWarmup("ok");
+
     try {
       currentPrice = await feed.fetchPrice(symbol);
+      healthService.recordPriceUpdate();
     } catch {
       currentPrice = chartCandleCache[chartCandleCache.length - 1]?.close || 0;
     }
@@ -104,8 +121,16 @@ async function loadSymbol(symbol: string) {
     showLoading(true, "Đang phân tích...");
     await yieldToUI();
 
+    pipeline.setFeedHealth(healthService.getHealth());
+
+    try {
+      const news = await newsService.fetchNews();
+      pipeline.setNews(news);
+    } catch {}
+
     try {
       const payload = pipeline.runFullAnalysis(currentPrice);
+      healthService.recordFullAnalysis();
       lastPayload = payload;
       updateUI(payload);
       updateChartAnnotations(payload);
@@ -117,9 +142,11 @@ async function loadSymbol(symbol: string) {
     startStream();
   } catch (e: any) {
     log("Fatal loadSymbol error: " + e.message);
+    healthService.setRestWarmup("error", e.message);
     showError("Lỗi tải dữ liệu: " + (e.message || "Không rõ") + ". Nhấn nút để thử lại.", true);
   } finally {
     showLoading(false);
+    updateHealthIndicator();
   }
 }
 
@@ -146,7 +173,7 @@ function setupChart() {
     crosshair: { mode: 0 },
     rightPriceScale: { borderColor: "rgba(255,255,255,0.1)", scaleMargins: { top: 0.1, bottom: 0.1 } },
     timeScale: { borderColor: "rgba(255,255,255,0.1)", timeVisible: true, secondsVisible: false },
-    watermark: { visible: true, text: "Crypto and Forex Trading", color: "rgba(255,255,255,0.04)", fontSize: 16 },
+    watermark: { visible: true, text: "SC Crypto & Forex Trading", color: "rgba(255,255,255,0.04)", fontSize: 16 },
   });
 
   candleSeries = chart.addSeries(CandlestickSeries, {
@@ -160,8 +187,6 @@ function setupChart() {
     const { width, height } = entries[0].contentRect;
     if (width > 0 && height > 0) chart.resize(width, height);
   }).observe(container);
-
-  log("Chart created: " + w + "x" + Math.max(h, 250));
 }
 
 function renderChartData() {
@@ -263,12 +288,17 @@ function startStream() {
       if (chartCandleCache.length > 500) chartCandleCache.splice(0, chartCandleCache.length - 500);
     }
     try {
+      pipeline.setFeedHealth(healthService.getHealth());
       const payload = pipeline.runFullAnalysis(candle.close);
+      healthService.recordFullAnalysis();
       lastPayload = payload;
       updateUI(payload);
       if (tf === selectedTf) { renderChartData(); updateChartAnnotations(payload); }
     } catch {}
   });
+
+  healthService.setWebSocket("connecting");
+  updateHealthIndicator();
 
   feed.subscribe(currentSymbol, TIMEFRAMES, (_sym, tf, candle, _isClose) => {
     const { closed } = candleManager.update(tf, candle);
@@ -276,7 +306,13 @@ function startStream() {
       pipeline.updateCandle(tf, candle);
       if (tf === selectedTf) updateChartCandle(candle);
       currentPrice = candle.close;
+      healthService.recordPriceUpdate();
       updatePriceTag(candle.close);
+    }
+
+    if (healthService.getHealth().websocket !== "connected") {
+      healthService.setWebSocket("connected");
+      updateHealthIndicator();
     }
   });
 }
@@ -291,6 +327,7 @@ function updateUI(payload: UIPayload) {
   updateConfidence();
   updatePriceTag(payload.currentPrice);
   updateTrendlineTab(payload);
+  updateHealthIndicator();
 }
 
 function updateBiasBar(l: number, s: number) {
@@ -302,7 +339,8 @@ function updateBiasBar(l: number, s: number) {
 
 function updateSignalBadge(dir: string, state: string) {
   const b = document.getElementById("signal-badge")!;
-  if (dir === "long" || state.includes("long")) { b.textContent = "Lệnh Chờ Long"; b.className = "badge badge-long"; }
+  if (state === "cooldown") { b.textContent = "Cooldown"; b.className = "badge badge-neutral"; }
+  else if (dir === "long" || state.includes("long")) { b.textContent = "Lệnh Chờ Long"; b.className = "badge badge-long"; }
   else if (dir === "short" || state.includes("short")) { b.textContent = "Lệnh Chờ Short"; b.className = "badge badge-short"; }
   else { b.textContent = "Theo dõi"; b.className = "badge badge-neutral"; }
 }
@@ -330,8 +368,22 @@ function updateMarquee(text: string) {
 function updateSignalSteps() {
   const c = document.getElementById("signal-steps")!;
   const s = pipeline?.getState().lastSignal;
-  if (!s?.steps) { c.innerHTML = '<div class="step-card pending"><div class="step-num">?</div><div class="step-body"><div class="step-title">Đang phân tích...</div></div></div>'; return; }
-  c.innerHTML = s.steps.map((st) => `<div class="step-card ${st.status}"><div class="step-num">${st.step}</div><div class="step-body"><div class="step-title">${st.title}</div><div class="step-desc">${st.description}</div></div></div>`).join("");
+  if (!s?.steps) {
+    const phase = healthService ? healthService.getPhase() : "cold_start";
+    const msg = phase === "live" ? "Đang phân tích..." : phase === "warmup" ? "Đang tải dữ liệu..." : "Chờ kết nối...";
+    c.innerHTML = `<div class="step-card pending"><div class="step-num">?</div><div class="step-body"><div class="step-title">${msg}</div></div></div>`;
+    return;
+  }
+  let html = s.steps.map((st) => `<div class="step-card ${st.status}"><div class="step-num">${st.step}</div><div class="step-body"><div class="step-title">${st.title}</div><div class="step-desc">${st.description}</div></div></div>`).join("");
+
+  if (s.primaryScenario) {
+    html += `<div class="step-card completed" style="border-color:var(--cyan);background:rgba(0,188,212,.08)"><div class="step-num">▸</div><div class="step-body"><div class="step-title">Kịch bản chính</div><div class="step-desc">${s.primaryScenario}</div></div></div>`;
+  }
+  if (s.alternativeScenario) {
+    html += `<div class="step-card pending" style="border-color:var(--gold);background:rgba(255,215,0,.06)"><div class="step-num">▹</div><div class="step-body"><div class="step-title">Kịch bản phụ</div><div class="step-desc">${s.alternativeScenario}</div></div></div>`;
+  }
+
+  c.innerHTML = html;
 }
 
 function updateConfidence() {
@@ -369,38 +421,69 @@ function updateChartAnnotations(payload: UIPayload) {
   if (sig) renderEntryLines(sig);
 }
 
+function updateHealthIndicator() {
+  if (!healthService) return;
+  const health = healthService.getHealth();
+  const phase = computeAppPhase(health);
+
+  let el = document.getElementById("health-indicator");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "health-indicator";
+    el.style.cssText = "position:absolute;top:6px;left:6px;z-index:6;display:flex;align-items:center;gap:4px;font-size:10px;pointer-events:none";
+    document.getElementById("chart-area")?.appendChild(el);
+  }
+
+  const colors: Record<AppPhase, string> = {
+    cold_start: "var(--text3)",
+    warmup: "var(--gold)",
+    live: "var(--green)",
+    stale: "var(--gold)",
+    disconnected: "var(--red)",
+    error: "var(--red)",
+  };
+  const labels: Record<AppPhase, string> = {
+    cold_start: "Khởi tạo",
+    warmup: "Đang tải",
+    live: "Live",
+    stale: "Dữ liệu cũ",
+    disconnected: "Mất kết nối",
+    error: "Lỗi",
+  };
+
+  el.innerHTML = `<span style="width:6px;height:6px;border-radius:50%;background:${colors[phase]};${phase === "live" ? "animation:pulse-dot 1.5s infinite" : ""}"></span><span style="color:${colors[phase]}">${labels[phase]}</span>`;
+
+  if (phase === "stale" && health.staleReason) {
+    showError(health.staleReason, true);
+  }
+}
+
 // ── News ────────────────────────────────────────────────────
 let newsLoaded = false;
 function loadNewsIfNeeded() {
   if (newsLoaded) return;
   newsLoaded = true;
   const f = document.getElementById("news-filters")!;
-  f.innerHTML = ["Tất cả","Bitcoin","Ethereum","Gold/PAXG"].map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}">${c}</button>`).join("");
+  f.innerHTML = ["Tất cả","Bitcoin","Ethereum","Vàng/PAXG"].map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}">${c}</button>`).join("");
   f.onclick = (e) => { const b = (e.target as HTMLElement).closest(".news-filter"); if (!b) return; f.querySelectorAll(".news-filter").forEach(x => x.classList.remove("active")); b.classList.add("active"); };
-  fetchNews();
+  renderNewsFromPayload();
 }
 
-async function fetchNews() {
+function renderNewsFromPayload() {
   const l = document.getElementById("news-list")!;
-  l.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px">Đang tải...</div>';
-  try {
-    const r = await fetch("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest");
-    const d = await r.json();
-    const arts = (d.Data || []).slice(0, 6);
-    if (!arts.length) { l.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px">Không có tin</div>'; return; }
-    l.innerHTML = arts.map((a: any) => {
-      const txt = (a.title + " " + (a.body || "")).toLowerCase();
-      const pos = ["bull","surge","rally","gain","rise","growth","recover","pump","breakout"].filter(w => txt.includes(w)).length;
-      const neg = ["bear","crash","drop","fall","decline","loss","dump","fear","risk","warn","plunge"].filter(w => txt.includes(w)).length;
-      const t = pos + neg || 1;
-      const sc = Math.round((pos / t) * 100);
-      const cls = sc < 40 ? "negative" : sc > 60 ? "positive" : "neutral";
-      const lb = sc < 40 ? "Tiêu cực" : sc > 60 ? "Tích cực" : "Trung tính";
-      const desc = sc < 40 ? "Có thể gây áp lực giảm giá." : sc > 60 ? "Có thể hỗ trợ đà tăng." : "Tác động không rõ ràng.";
-      const time = new Date(a.published_on * 1000).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
-      return `<div class="news-card"><div class="news-source">${a.source_info?.name || a.source} · ${time}</div><div class="news-title">${a.title}</div><div class="news-sentiment ${cls}"><strong>Cảm xúc: ${lb} (${sc}%)</strong> - ${desc}</div></div>`;
-    }).join("");
-  } catch { l.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px">Lỗi tải tin tức</div>'; }
+  const news = lastPayload?.news || newsService?.getCachedNews() || [];
+  if (!news.length) {
+    l.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Không có tin tức</div>';
+    return;
+  }
+  l.innerHTML = news.map((n) => {
+    const cls = n.sentiment === "negative" ? "negative" : n.sentiment === "positive" ? "positive" : "neutral";
+    const lb = n.sentiment === "negative" ? "Tiêu cực" : n.sentiment === "positive" ? "Tích cực" : "Trung tính";
+    const desc = n.sentiment === "negative" ? "Có thể gây áp lực giảm giá." : n.sentiment === "positive" ? "Có thể hỗ trợ đà tăng." : "Tác động không rõ ràng.";
+    const time = new Date(n.publishedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
+    const impactBadge = n.impact === "high" ? " 🔴" : n.impact === "medium" ? " 🟡" : "";
+    return `<div class="news-card"><div class="news-source">${n.source} · ${time}${impactBadge}</div><div class="news-title">${n.title}</div><div class="news-sentiment ${cls}"><strong>Cảm xúc: ${lb} (${n.confidence}%)</strong> - ${desc}</div></div>`;
+  }).join("");
 }
 
 // ── TF Switch ───────────────────────────────────────────────
@@ -428,6 +511,9 @@ function setupTabs() {
 
 function setupSymbolSelector() {
   const s = document.getElementById("symbol-select") as HTMLSelectElement;
+  s.innerHTML = SymbolMapping.all().map((d) =>
+    `<option value="${d.symbol}">${d.displayLabel}</option>`
+  ).join("");
   s.value = currentSymbol;
   s.onchange = () => {
     newsLoaded = false;

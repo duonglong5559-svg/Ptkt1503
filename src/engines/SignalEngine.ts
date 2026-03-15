@@ -28,7 +28,7 @@ export class SignalEngine {
     if (previousSignal?.cooldownUntil && currentTime < previousSignal.cooldownUntil) {
       return {
         ...previousSignal,
-        state: "idle",
+        state: "cooldown",
         summaryText: "Đang trong thời gian cooldown. Chờ điều kiện mới.",
         updatedAt: currentTime,
       };
@@ -63,6 +63,8 @@ export class SignalEngine {
         ? currentTime + COOLDOWN_MS
         : previousSignal?.cooldownUntil;
 
+    const { primaryScenario, alternativeScenario } = this.buildScenarios(input, finalState, direction);
+
     return {
       symbol,
       state: finalState,
@@ -80,6 +82,8 @@ export class SignalEngine {
       detailText,
       steps,
       overallConfidence,
+      primaryScenario,
+      alternativeScenario,
       updatedAt: currentTime,
       cooldownUntil,
     };
@@ -522,6 +526,41 @@ export class SignalEngine {
     if (state === "ready_long" || state === "ready_short") conf += 8;
 
     return Math.min(99, Math.max(20, Math.round(conf)));
+  }
+
+  private buildScenarios(
+    input: SignalEngineInput,
+    state: SignalState,
+    direction: "long" | "short" | "neutral"
+  ): { primaryScenario?: string; alternativeScenario?: string } {
+    const { pivotRelation, currentPrice } = input;
+    const pivotPrice = pivotRelation.levels.pivot.toFixed(2);
+
+    if (state === "idle" || state === "invalidated" || state === "cooldown") {
+      return {
+        primaryScenario: "Theo dõi thị trường, chờ tín hiệu rõ ràng hơn.",
+        alternativeScenario: undefined,
+      };
+    }
+
+    if (direction === "short") {
+      return {
+        primaryScenario: `Canh Short khi giá retest thất bại vùng kháng cự hoặc trendline giảm.`,
+        alternativeScenario: `Nếu breakout và giữ trên Pivot ${pivotPrice}, chuyển sang kịch bản Long thận trọng.`,
+      };
+    }
+
+    if (direction === "long") {
+      return {
+        primaryScenario: `Canh Long khi giá pullback về hỗ trợ và nến xác nhận giữ được đáy.`,
+        alternativeScenario: `Nếu breakdown dưới hỗ trợ gần nhất, chuyển sang kịch bản Short.`,
+      };
+    }
+
+    return {
+      primaryScenario: "Thị trường đang sideway, chờ phá vỡ rõ ràng.",
+      alternativeScenario: undefined,
+    };
   }
 
   private buildDetails(
