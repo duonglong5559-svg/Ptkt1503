@@ -17,6 +17,7 @@ export function testPipeline(assert: AssertFn) {
     const payload = pipeline.runFullAnalysis(currentPrice);
 
     assert(payload.symbol === "BTCUSDT", "Pipeline symbol correct");
+    assert(payload.displaySymbol !== undefined, "displaySymbol present");
     assert(payload.currentPrice === currentPrice, "Current price correct");
     assert(
       payload.globalBias.long + payload.globalBias.short === 100,
@@ -25,6 +26,10 @@ export function testPipeline(assert: AssertFn) {
     assert(Object.keys(payload.timeframes).length > 0, "Timeframe data present");
     assert(payload.signal.summary.length > 0, "Signal summary generated");
     assert(payload.signal.state !== undefined, "Signal state defined");
+    assert(payload.feedHealth !== undefined, "feedHealth present in payload");
+    assert(Array.isArray(payload.news), "news array present in payload");
+    assert(payload.signal.confidenceLong >= 0, "confidenceLong present");
+    assert(payload.signal.confidenceShort >= 0, "confidenceShort present");
   }
 
   // Test: pipeline with uptrend data

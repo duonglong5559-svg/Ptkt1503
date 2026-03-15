@@ -42,7 +42,7 @@ export function testScoringEngine(assert: AssertFn) {
       patternSignals: [],
       pivotRelation: makePivotRelation(),
       trendlineOutput: makeTrendlineOutput(),
-      structureState: "LH-LL",
+      structureState: "downtrend",
       currentPrice: 95,
     });
 
@@ -70,7 +70,7 @@ export function testScoringEngine(assert: AssertFn) {
         directionBias: "bullish",
       }),
       trendlineOutput: makeTrendlineOutput({ trendlineBias: "bullish" }),
-      structureState: "HH-HL",
+      structureState: "uptrend",
       momentumScore: 70,
       currentPrice: 105,
     });
@@ -109,7 +109,7 @@ export function testScoringEngine(assert: AssertFn) {
         patternSignals: [],
         pivotRelation: makePivotRelation({ state: "above_pivot", directionBias: "bullish" }),
         trendlineOutput: makeTrendlineOutput(),
-        structureState: "HH-HL",
+        structureState: "uptrend",
         currentPrice: 105,
       }),
       engine.scoreTimeframe({
@@ -118,7 +118,7 @@ export function testScoringEngine(assert: AssertFn) {
         patternSignals: [],
         pivotRelation: makePivotRelation({ state: "below_pivot", directionBias: "bearish" }),
         trendlineOutput: makeTrendlineOutput(),
-        structureState: "LH-LL",
+        structureState: "downtrend",
         currentPrice: 95,
       }),
       engine.scoreTimeframe({
@@ -127,7 +127,7 @@ export function testScoringEngine(assert: AssertFn) {
         patternSignals: [],
         pivotRelation: makePivotRelation({ state: "below_pivot", directionBias: "bearish" }),
         trendlineOutput: makeTrendlineOutput(),
-        structureState: "LH-LL",
+        structureState: "downtrend",
         currentPrice: 95,
       }),
     ];
@@ -148,7 +148,7 @@ export function testScoringEngine(assert: AssertFn) {
       patternSignals: [],
       pivotRelation: makePivotRelation(),
       trendlineOutput: makeTrendlineOutput(),
-      structureState: "LH-LL",
+      structureState: "downtrend",
       volatilityScore: 95,
       currentPrice: 95,
     });
@@ -172,7 +172,7 @@ export function testScoringEngine(assert: AssertFn) {
       }],
       pivotRelation: makePivotRelation({ state: "above_pivot", directionBias: "bullish" }),
       trendlineOutput: makeTrendlineOutput(),
-      structureState: "HH-HL",
+      structureState: "uptrend",
       srContext: {
         nearestResistance: 106,
         resistanceDistance: 1,

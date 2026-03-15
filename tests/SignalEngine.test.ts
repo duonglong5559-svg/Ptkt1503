@@ -77,7 +77,7 @@ export function testSignalEngine(assert: AssertFn) {
       globalShortPercent: 68,
       pivotRelation: makePivot(),
       trendlineOutput: makeTL(),
-      structureState: "LH-LL",
+      structureState: "downtrend",
       currentPrice: 5108,
       atr: 15,
       currentTime: Date.now(),
@@ -101,7 +101,7 @@ export function testSignalEngine(assert: AssertFn) {
       globalShortPercent: 32,
       pivotRelation: makePivot({ state: "above_pivot", directionBias: "bullish" }),
       trendlineOutput: makeTL(),
-      structureState: "HH-HL",
+      structureState: "uptrend",
       currentPrice: 5200,
       atr: 15,
       currentTime: Date.now(),
@@ -123,7 +123,7 @@ export function testSignalEngine(assert: AssertFn) {
       globalShortPercent: 68,
       pivotRelation: makePivot(),
       trendlineOutput: makeTL(),
-      structureState: "LH-LL",
+      structureState: "downtrend",
       currentPrice: 5108,
       atr: 15,
       currentTime: Date.now(),
@@ -144,7 +144,7 @@ export function testSignalEngine(assert: AssertFn) {
       globalShortPercent: 68,
       pivotRelation: makePivot(),
       trendlineOutput: makeTL(),
-      structureState: "LH-LL",
+      structureState: "downtrend",
       currentPrice: 5108,
       atr: 15,
       currentTime: Date.now(),
@@ -162,14 +162,14 @@ export function testSignalEngine(assert: AssertFn) {
       globalShortPercent: 68,
       pivotRelation: makePivot(),
       trendlineOutput: makeTL(),
-      structureState: "LH-LL",
+      structureState: "downtrend",
       currentPrice: 5108,
       atr: 15,
       previousSignal: withCooldown,
       currentTime: Date.now(),
     });
 
-    assert(result.state === "idle", "Cooldown forces idle state");
+    assert(result.state === "cooldown", "Cooldown forces cooldown state");
   }
 
   // Test: invalidation on bias flip
@@ -181,7 +181,7 @@ export function testSignalEngine(assert: AssertFn) {
       globalShortPercent: 68,
       pivotRelation: makePivot(),
       trendlineOutput: makeTL(),
-      structureState: "LH-LL",
+      structureState: "downtrend",
       currentPrice: 5108,
       atr: 15,
       currentTime: Date.now(),
@@ -194,7 +194,7 @@ export function testSignalEngine(assert: AssertFn) {
       globalShortPercent: 28,
       pivotRelation: makePivot({ state: "above_pivot", directionBias: "bullish" }),
       trendlineOutput: makeTL(),
-      structureState: "HH-HL",
+      structureState: "uptrend",
       currentPrice: 5200,
       atr: 15,
       previousSignal: prevShort,

@@ -235,10 +235,10 @@ export class ScoringEngine {
     short: ScoreComponents
   ): void {
     switch (state) {
-      case "HH-HL":
+      case "uptrend":
         long.structure += 20;
         break;
-      case "LH-LL":
+      case "downtrend":
         short.structure += 20;
         break;
       case "breakout":

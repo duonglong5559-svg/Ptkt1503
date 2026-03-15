@@ -5,6 +5,9 @@ import { testTrendlineEngine } from "./TrendlineEngine.test";
 import { testScoringEngine } from "./ScoringEngine.test";
 import { testSignalEngine } from "./SignalEngine.test";
 import { testPipeline } from "./Pipeline.test";
+import { testFeedHealth } from "./FeedHealth.test";
+import { testSymbolMapping } from "./SymbolMapping.test";
+import { testCandleConfirmation } from "./CandleConfirmation.test";
 
 let passed = 0;
 let failed = 0;
@@ -42,6 +45,15 @@ async function run() {
 
   console.log("\n▸ Pipeline (integration)");
   testPipeline(assert);
+
+  console.log("\n▸ FeedHealth");
+  testFeedHealth(assert);
+
+  console.log("\n▸ SymbolMapping");
+  testSymbolMapping(assert);
+
+  console.log("\n▸ CandleConfirmation");
+  testCandleConfirmation(assert);
 
   console.log(`\n${"=".repeat(40)}`);
   console.log(`Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
