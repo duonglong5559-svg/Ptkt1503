@@ -101,11 +101,18 @@ async function loadSymbol(symbol: string) {
 
     healthService.setRestWarmup("ok");
 
+    const lastCandlePrice = chartCandleCache[chartCandleCache.length - 1]?.close || 0;
     try {
-      currentPrice = await feed.fetchPrice(symbol);
+      const fetchedPrice = await feed.fetchPrice(symbol);
+      if (lastCandlePrice > 0 && Math.abs(fetchedPrice - lastCandlePrice) / lastCandlePrice > 0.5) {
+        log(`Price mismatch: fetched ${fetchedPrice} vs candle ${lastCandlePrice}, using candle price`);
+        currentPrice = lastCandlePrice;
+      } else {
+        currentPrice = fetchedPrice;
+      }
       healthService.recordPriceUpdate();
     } catch {
-      currentPrice = chartCandleCache[chartCandleCache.length - 1]?.close || 0;
+      currentPrice = lastCandlePrice;
     }
 
     showLoading(true, "Đang vẽ biểu đồ...");
@@ -285,8 +292,12 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
 
 // ── Streaming ───────────────────────────────────────────────
 function startStream() {
+  const streamSymbol = currentSymbol;
+
   candleManager = new CandleStateManager();
   candleManager.setOnCandleClose((tf, candle) => {
+    if (streamSymbol !== currentSymbol) return;
+
     pipeline.updateCandle(tf, candle);
     if (tf === selectedTf) {
       chartCandleCache.push(candle);
@@ -297,6 +308,7 @@ function startStream() {
       const payload = pipeline.runFullAnalysis(candle.close);
       healthService.recordFullAnalysis();
       lastPayload = payload;
+      currentPrice = payload.currentPrice;
       updateUI(payload);
       if (tf === selectedTf) { renderChartData(); updateChartAnnotations(payload); }
     } catch {}
@@ -305,12 +317,11 @@ function startStream() {
   healthService.setWebSocket("connecting");
   updateHealthIndicator();
 
-  const subscribedSymbol = currentSymbol;
-  feed.subscribe(subscribedSymbol, TIMEFRAMES, (sym, tf, candle, _isClose) => {
-    if (sym.toUpperCase() !== subscribedSymbol.toUpperCase() &&
-        candle.symbol?.toUpperCase() !== subscribedSymbol.toUpperCase()) {
-      return;
-    }
+  feed.subscribe(streamSymbol, TIMEFRAMES, (sym, tf, candle, _isClose) => {
+    if (streamSymbol !== currentSymbol) return;
+
+    const candleSym = (candle.symbol || sym || "").toUpperCase();
+    if (candleSym !== streamSymbol.toUpperCase()) return;
 
     const { closed } = candleManager.update(tf, candle);
     if (!closed) {
@@ -421,7 +432,14 @@ function updateConfidence() {
 }
 
 function updatePriceTag(price: number) {
-  document.getElementById("current-price-tag")!.textContent = price ? price.toFixed(2) : "---";
+  if (!price || price <= 0) {
+    document.getElementById("current-price-tag")!.textContent = "---";
+    return;
+  }
+  if (currentPrice > 0 && Math.abs(price - currentPrice) / currentPrice > 0.5) {
+    return;
+  }
+  document.getElementById("current-price-tag")!.textContent = price.toFixed(2);
 }
 
 function updateTrendlineTab(payload: UIPayload) {
