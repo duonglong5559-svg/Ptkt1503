@@ -269,8 +269,7 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
   if (closed.length === 0 || trendlines.length === 0) return;
 
   for (const tl of trendlines.slice(0, 5)) {
-    const isSup = tl.type.includes("support");
-    const color = isSup ? "rgba(38,166,154,0.6)" : "rgba(239,83,80,0.6)";
+    const color = "rgba(180,180,180,0.7)";
 
     const i1 = Math.max(0, Math.min(tl.points.x1, closed.length - 1));
     const i2 = Math.max(0, Math.min(tl.points.x2, closed.length - 1));
@@ -370,15 +369,17 @@ function updateBiasBar(l: number, s: number) {
 
 function updateSignalBadge(dir: string, state: string) {
   const b = document.getElementById("signal-badge")!;
-  if (state === "cooldown") { b.textContent = "Cooldown"; b.className = "badge badge-neutral"; }
-  else if (state === "active_long") { b.textContent = "Active Long"; b.className = "badge badge-long"; }
-  else if (state === "active_short") { b.textContent = "Active Short"; b.className = "badge badge-short"; }
-  else if (state === "triggered_long") { b.textContent = "Triggered Long"; b.className = "badge badge-long"; }
-  else if (state === "triggered_short") { b.textContent = "Triggered Short"; b.className = "badge badge-short"; }
-  else if (state === "ready_long") { b.textContent = "Ready Long"; b.className = "badge badge-long"; }
-  else if (state === "ready_short") { b.textContent = "Ready Short"; b.className = "badge badge-short"; }
-  else if (dir === "long" || state.includes("long")) { b.textContent = "Theo dõi Long"; b.className = "badge badge-long"; }
-  else if (dir === "short" || state.includes("short")) { b.textContent = "Theo dõi Short"; b.className = "badge badge-short"; }
+  if (state === "cooldown") { b.textContent = "Chờ Cooldown"; b.className = "badge badge-neutral"; }
+  else if (state === "active_long") { b.textContent = "Đang Long"; b.className = "badge badge-long"; }
+  else if (state === "active_short") { b.textContent = "Đang Short"; b.className = "badge badge-short"; }
+  else if (state === "triggered_long") { b.textContent = "Vào Lệnh Long"; b.className = "badge badge-long"; }
+  else if (state === "triggered_short") { b.textContent = "Vào Lệnh Short"; b.className = "badge badge-short"; }
+  else if (state === "ready_long") { b.textContent = "Lệnh Chờ Long"; b.className = "badge badge-long"; }
+  else if (state === "ready_short") { b.textContent = "Lệnh Chờ Short"; b.className = "badge badge-short"; }
+  else if (state === "watch_long") { b.textContent = "Theo dõi Long"; b.className = "badge badge-long"; }
+  else if (state === "watch_short") { b.textContent = "Theo dõi Short"; b.className = "badge badge-short"; }
+  else if (dir === "long") { b.textContent = "Theo dõi Long"; b.className = "badge badge-long"; }
+  else if (dir === "short") { b.textContent = "Theo dõi Short"; b.className = "badge badge-short"; }
   else { b.textContent = "Theo dõi"; b.className = "badge badge-neutral"; }
 }
 
