@@ -38,84 +38,91 @@ async function init() {
 
 async function loadSymbol(symbol: string) {
   showLoading(true, "Đang kết nối...");
-  currentSymbol = symbol;
-  TIMEFRAMES = getTimeframes(symbol);
 
-  if (feed) feed.close();
-  feed = new BrowserFeed();
-  pipeline = new Pipeline(symbol);
-  candleManager = new CandleStateManager();
-  chartCandleCache = [];
+  try {
+    currentSymbol = symbol;
+    TIMEFRAMES = getTimeframes(symbol);
 
-  showLoading(true, "Đang tải dữ liệu nến...");
-  const results = await Promise.allSettled(
-    TIMEFRAMES.map(async (tf) => {
-      const candles = await feed.fetchKlines(symbol, tf, CANDLE_LIMIT);
-      return { tf, candles };
-    })
-  );
+    if (feed) feed.close();
+    feed = new BrowserFeed();
+    pipeline = new Pipeline(symbol);
+    candleManager = new CandleStateManager();
+    chartCandleCache = [];
 
-  let loaded = 0;
-  for (const r of results) {
-    if (r.status === "fulfilled" && r.value.candles.length > 0) {
-      pipeline.initializeCache(r.value.tf, r.value.candles);
-      loaded++;
-      if (r.value.tf === selectedTf) {
-        chartCandleCache = r.value.candles;
-      }
-    } else if (r.status === "rejected") {
-      log(`TF fetch failed: ${r.reason}`);
-    }
-  }
+    showLoading(true, "Đang tải dữ liệu nến...");
+    const results = await Promise.allSettled(
+      TIMEFRAMES.map(async (tf) => {
+        const candles = await feed.fetchKlines(symbol, tf, CANDLE_LIMIT);
+        return { tf, candles };
+      })
+    );
 
-  // If selectedTf didn't load, use first available
-  if (chartCandleCache.length === 0) {
+    let loaded = 0;
     for (const r of results) {
       if (r.status === "fulfilled" && r.value.candles.length > 0) {
-        chartCandleCache = r.value.candles;
-        selectedTf = r.value.tf;
-        break;
+        pipeline.initializeCache(r.value.tf, r.value.candles);
+        loaded++;
+        if (r.value.tf === selectedTf) {
+          chartCandleCache = r.value.candles;
+        }
+      } else if (r.status === "rejected") {
+        log(`TF fetch failed: ${r.reason}`);
       }
     }
-  }
 
-  log(`Loaded ${loaded}/${TIMEFRAMES.length} timeframes`);
+    if (chartCandleCache.length === 0) {
+      for (const r of results) {
+        if (r.status === "fulfilled" && r.value.candles.length > 0) {
+          chartCandleCache = r.value.candles;
+          selectedTf = r.value.tf;
+          break;
+        }
+      }
+    }
 
-  if (loaded === 0) {
-    showLoading(false);
-    showError("Không thể tải dữ liệu. Kiểm tra kết nối và thử lại.");
-    return;
-  }
+    log(`Loaded ${loaded}/${TIMEFRAMES.length} timeframes`);
 
-  // Get price
-  try {
-    currentPrice = await feed.fetchPrice(symbol);
-  } catch {
-    currentPrice = chartCandleCache[chartCandleCache.length - 1]?.close || 0;
-  }
+    if (loaded === 0) {
+      showError("Không thể tải dữ liệu. Nhấn nút để thử lại.", true);
+      return;
+    }
 
-  // Render chart immediately
-  showLoading(true, "Đang vẽ biểu đồ...");
-  await yieldToUI();
-  renderChartData();
-  updatePriceTag(currentPrice);
+    try {
+      currentPrice = await feed.fetchPrice(symbol);
+    } catch {
+      currentPrice = chartCandleCache[chartCandleCache.length - 1]?.close || 0;
+    }
 
-  // Run analysis
-  showLoading(true, "Đang phân tích...");
-  await yieldToUI();
+    showLoading(true, "Đang vẽ biểu đồ...");
+    await yieldToUI();
 
-  try {
-    const payload = pipeline.runFullAnalysis(currentPrice);
-    lastPayload = payload;
-    updateUI(payload);
-    updateChartAnnotations(payload);
+    try {
+      renderChartData();
+      updatePriceTag(currentPrice);
+    } catch (e: any) {
+      log("Chart render error: " + e.message);
+    }
+
+    showLoading(true, "Đang phân tích...");
+    await yieldToUI();
+
+    try {
+      const payload = pipeline.runFullAnalysis(currentPrice);
+      lastPayload = payload;
+      updateUI(payload);
+      updateChartAnnotations(payload);
+    } catch (e: any) {
+      log("Analysis error: " + e.message);
+    }
+
+    hideError();
+    startStream();
   } catch (e: any) {
-    log("Analysis error: " + e.message);
+    log("Fatal loadSymbol error: " + e.message);
+    showError("Lỗi tải dữ liệu: " + (e.message || "Không rõ") + ". Nhấn nút để thử lại.", true);
+  } finally {
+    showLoading(false);
   }
-
-  showLoading(false);
-  hideError();
-  startStream();
 }
 
 function yieldToUI(): Promise<void> {
@@ -445,21 +452,32 @@ function showLoading(show: boolean, msg?: string) {
     if (p && msg) p.textContent = msg;
     loadingTimeout = setTimeout(() => {
       el.classList.add("hidden");
-      log("Loading timeout - hiding overlay");
-    }, 30000);
+      log("Loading timeout - force hiding overlay");
+    }, 20000);
   } else {
     el.classList.add("hidden");
   }
 }
-function showError(msg: string) {
+function showError(msg: string, withRetry = false) {
   let el = document.getElementById("error-banner");
   if (!el) { el = document.createElement("div"); el.id = "error-banner"; document.getElementById("app")!.prepend(el); }
-  el.innerHTML = `<span>${msg}</span><button onclick="this.parentElement?.remove()">✕</button>`;
+  const retryHtml = withRetry ? `<button id="retry-btn">Thử lại</button>` : "";
+  el.innerHTML = `<span>${msg}</span><div style="display:flex;gap:8px;align-items:center">${retryHtml}<button class="close-btn">✕</button></div>`;
   el.style.cssText = "background:#3d1111;color:#ff6b6b;padding:10px 14px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #5a1a1a;flex-shrink:0";
-  const btn = el.querySelector("button"); if (btn) btn.style.cssText = "background:none;border:none;color:#ff6b6b;font-size:16px;cursor:pointer";
+  el.querySelectorAll("button").forEach(btn => {
+    btn.style.cssText = "background:none;border:1px solid #ff6b6b;color:#ff6b6b;font-size:12px;cursor:pointer;padding:4px 10px;border-radius:4px";
+  });
+  const retryBtn = el.querySelector("#retry-btn");
+  if (retryBtn) retryBtn.addEventListener("click", () => { hideError(); loadSymbol(currentSymbol); });
+  const closeBtn = el.querySelector(".close-btn");
+  if (closeBtn) closeBtn.addEventListener("click", () => hideError());
 }
 function hideError() { document.getElementById("error-banner")?.remove(); }
 function log(m: string) { console.log("[PTKT] " + m); }
 
 // ── Start ───────────────────────────────────────────────────
-init();
+init().catch((e) => {
+  log("Init failed: " + e.message);
+  showLoading(false);
+  showError("Lỗi khởi tạo ứng dụng. Nhấn nút để thử lại.", true);
+});

@@ -5,7 +5,7 @@ const BINANCE_FAPI = "https://fapi.binance.com/fapi/v1";
 const OKX_API = "https://www.okx.com/api/v5";
 
 const OKX_WS = "wss://ws.okx.com:8443/ws/v5/public";
-const FETCH_TIMEOUT = 15000;
+const FETCH_TIMEOUT = 8000;
 
 function fetchWithTimeout(url: string, timeout = FETCH_TIMEOUT): Promise<Response> {
   const controller = new AbortController();
@@ -63,12 +63,12 @@ export class BrowserFeed {
     try {
       return await this.fetchBinanceVision(symbol, interval, limit);
     } catch (e1) {
-      console.warn(`[Feed] Binance Vision failed for ${symbol}/${interval}, trying Binance Futures...`);
+      console.warn(`[Feed] Binance Vision failed for ${symbol}/${interval}, trying OKX...`);
       try {
-        return await this.fetchBinanceFutures(symbol, interval, limit);
-      } catch (e2) {
-        console.warn(`[Feed] Binance Futures failed, trying OKX...`);
         return await this.fetchOKX(symbol, interval, limit);
+      } catch (e2) {
+        console.warn(`[Feed] OKX failed, trying Binance Futures...`);
+        return await this.fetchBinanceFutures(symbol, interval, limit);
       }
     }
   }
@@ -83,14 +83,7 @@ export class BrowserFeed {
       const data = await res.json();
       return parseFloat(data.price);
     } catch {
-      try {
-        const res = await fetchWithTimeout(`${BINANCE_FAPI}/ticker/price?symbol=${symbol.toUpperCase()}`);
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = await res.json();
-        return parseFloat(data.price);
-      } catch {
-        return await this.fetchOKXPrice(symbol);
-      }
+      return await this.fetchOKXPrice(symbol);
     }
   }
 
@@ -193,8 +186,8 @@ export class BrowserFeed {
     return new Promise((resolve, reject) => {
       const streams = timeframes.map((tf) => `${symbol.toLowerCase()}@kline_${tf}`);
       const urls = [
-        `wss://fstream.binance.com/stream?streams=${streams.join("/")}`,
         `wss://stream.binance.com:9443/stream?streams=${streams.join("/")}`,
+        `wss://fstream.binance.com/stream?streams=${streams.join("/")}`,
       ];
 
       let tried = 0;
