@@ -270,31 +270,32 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
 
   for (const tl of trendlines.slice(0, 5)) {
     const isSup = tl.type.includes("support");
-    const color = isSup ? "rgba(38,166,154,0.5)" : "rgba(239,83,80,0.5)";
-    const levelPrice = tl.slope === 0 ? tl.intercept : tl.points.y1;
+    const color = isSup ? "rgba(38,166,154,0.6)" : "rgba(239,83,80,0.6)";
 
-    const startIdx = Math.max(0, Math.min(tl.points.x1, closed.length - 1));
-    const endIdx = Math.min(tl.points.x2, closed.length - 1);
-    if (startIdx >= endIdx || startIdx >= closed.length) continue;
+    const i1 = Math.max(0, Math.min(tl.points.x1, closed.length - 1));
+    const i2 = Math.max(0, Math.min(tl.points.x2, closed.length - 1));
+    if (i1 === i2) continue;
 
     const series = chart.addSeries(LineSeries, {
-      color, lineWidth: 1, lineStyle: LineStyle.Dashed,
+      color, lineWidth: 2, lineStyle: LineStyle.Solid,
       crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
     });
 
-    const data: LineData[] = [];
-    if (tl.slope === 0) {
-      data.push({ time: (closed[startIdx].openTime / 1000) as UTCTimestamp, value: levelPrice });
-      data.push({ time: (closed[endIdx].openTime / 1000) as UTCTimestamp, value: levelPrice });
-    } else {
-      data.push({ time: (closed[startIdx].openTime / 1000) as UTCTimestamp, value: tl.points.y1 });
-      data.push({ time: (closed[endIdx].openTime / 1000) as UTCTimestamp, value: tl.points.y2 });
+    const data: LineData[] = [
+      { time: (closed[i1].openTime / 1000) as UTCTimestamp, value: tl.points.y1 },
+      { time: (closed[i2].openTime / 1000) as UTCTimestamp, value: tl.points.y2 },
+    ];
+
+    const extIdx = Math.min(i2 + 20, closed.length - 1);
+    if (extIdx > i2) {
+      const extPrice = tl.slope * extIdx + tl.intercept;
+      if (extPrice > 0) {
+        data.push({ time: (closed[extIdx].openTime / 1000) as UTCTimestamp, value: extPrice });
+      }
     }
 
-    if (data.length >= 2) {
-      series.setData(data);
-      trendlineSeriesList.push(series);
-    }
+    series.setData(data);
+    trendlineSeriesList.push(series);
   }
 }
 
@@ -460,12 +461,14 @@ function updateTrendlineTab(payload: UIPayload) {
   const deduped = dedupeTrendlines(all).slice(0, 5);
   document.getElementById("tl-count")!.textContent = String(deduped.length);
 
-  if (!deduped.length) { c.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa phát hiện vùng S/R</div>'; return; }
+  if (!deduped.length) { c.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa phát hiện đường xu hướng</div>'; return; }
   c.innerHTML = deduped.map((t) => {
     const isSup = t.type.includes("support");
     const interLabel = t.lastInteraction !== "none" ? t.lastInteraction : "";
-    const priceLabel = t.intercept ? t.intercept.toFixed(2) : t.points.y1.toFixed(2);
-    return `<div class="tl-item"><div><div class="tl-type ${isSup ? "support" : "resistance"}">${isSup ? "▲ Hỗ trợ" : "▼ Kháng cự"} ${priceLabel}</div><div class="tl-info">Touch:${t.touches} ${interLabel} ${t.distanceToPricePercent.toFixed(1)}%</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
+    const projIdx = t.points.x2 + 5;
+    const projPrice = (t.slope * projIdx + t.intercept).toFixed(2);
+    const typeLabel = t.type === "ascending_support" ? "▲ Hỗ trợ tăng" : t.type === "descending_resistance" ? "▼ Kháng cự giảm" : isSup ? "▲ Hỗ trợ" : "▼ Kháng cự";
+    return `<div class="tl-item"><div><div class="tl-type ${isSup ? "support" : "resistance"}">${typeLabel} ~${projPrice}</div><div class="tl-info">Touch:${t.touches} ${interLabel} ${t.distanceToPricePercent.toFixed(1)}%</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
   }).join("");
 }
 
