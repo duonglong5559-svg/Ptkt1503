@@ -39,9 +39,9 @@ export class SignalEngine {
 
     const entryLong = this.computeEntryLong(input);
     const entryShort = this.computeEntryShort(input);
-    const stopLoss = this.computeStopLoss(input, direction);
+    const stopLoss = this.computeStopLoss(input, direction, entryLong, entryShort);
     const takeProfit = this.computeTakeProfit(input, direction, entryLong, entryShort, stopLoss);
-    const target = this.computeTarget(input, direction);
+    const target = this.computeTarget(input, direction, entryLong, entryShort, takeProfit);
 
     const rr = this.computeRR(
       direction,
@@ -307,19 +307,34 @@ export class SignalEngine {
 
   private computeStopLoss(
     input: SignalEngineInput,
-    direction: "long" | "short" | "neutral"
+    direction: "long" | "short" | "neutral",
+    entryLong?: number,
+    entryShort?: number
   ): number | undefined {
     const { atr, currentPrice, latestSwingHigh, latestSwingLow } = input;
     const buffer = (atr || currentPrice * 0.003) * ATR_BUFFER_MULT;
+    const atrFallback = atr || currentPrice * 0.01;
 
     if (direction === "long") {
-      const base = latestSwingLow || (currentPrice - (atr || currentPrice * 0.01));
-      return Math.round((base - buffer) * 100) / 100;
+      const entry = entryLong || currentPrice;
+      const swingBase = latestSwingLow && latestSwingLow < entry ? latestSwingLow : undefined;
+      const base = swingBase || (entry - atrFallback);
+      let sl = Math.round((base - buffer) * 100) / 100;
+      if (sl >= entry) {
+        sl = Math.round((entry - atrFallback * 0.8) * 100) / 100;
+      }
+      return sl;
     }
 
     if (direction === "short") {
-      const base = latestSwingHigh || (currentPrice + (atr || currentPrice * 0.01));
-      return Math.round((base + buffer) * 100) / 100;
+      const entry = entryShort || currentPrice;
+      const swingBase = latestSwingHigh && latestSwingHigh > entry ? latestSwingHigh : undefined;
+      const base = swingBase || (entry + atrFallback);
+      let sl = Math.round((base + buffer) * 100) / 100;
+      if (sl <= entry) {
+        sl = Math.round((entry + atrFallback * 0.8) * 100) / 100;
+      }
+      return sl;
     }
 
     return undefined;
@@ -380,10 +395,35 @@ export class SignalEngine {
 
   private computeTarget(
     input: SignalEngineInput,
-    direction: "long" | "short" | "neutral"
+    direction: "long" | "short" | "neutral",
+    entryLong?: number,
+    entryShort?: number,
+    takeProfit?: number
   ): number | undefined {
-    const { pivotRelation } = input;
-    return pivotRelation.targetHint;
+    const { pivotRelation, currentPrice, atr, nearestResistance, nearestSupport } = input;
+    const entry = direction === "long" ? entryLong : entryShort;
+
+    if (takeProfit && entry && Math.abs(takeProfit - entry) / (entry || 1) > 0.001) {
+      return takeProfit;
+    }
+
+    if (direction === "long") {
+      const candidates = [pivotRelation.targetHint, nearestResistance, pivotRelation.levels.r1]
+        .filter((v): v is number => v !== undefined && v > (entry || currentPrice));
+      if (candidates.length > 0) return Math.round(Math.min(...candidates) * 100) / 100;
+      const atrTarget = (entry || currentPrice) + (atr || currentPrice * 0.01) * 1.5;
+      return Math.round(atrTarget * 100) / 100;
+    }
+
+    if (direction === "short") {
+      const candidates = [pivotRelation.targetHint, nearestSupport, pivotRelation.levels.s1]
+        .filter((v): v is number => v !== undefined && v < (entry || currentPrice));
+      if (candidates.length > 0) return Math.round(Math.max(...candidates) * 100) / 100;
+      const atrTarget = (entry || currentPrice) - (atr || currentPrice * 0.01) * 1.5;
+      return Math.round(atrTarget * 100) / 100;
+    }
+
+    return undefined;
   }
 
   private computeRR(
@@ -518,8 +558,14 @@ export class SignalEngine {
 
     const entry = isLong ? entryLong : entryShort;
     const entryPctFromPrice = entry ? (((entry - currentPrice) / currentPrice) * 100).toFixed(1) : "?";
-    const zoneLow = isLong ? (nearestSupport || pivotRelation.levels.s1) : (pivotRelation.levels.pivot);
-    const zoneHigh = isLong ? (pivotRelation.levels.pivot) : (nearestResistance || pivotRelation.levels.r1);
+    const atrWidth = (input.atr || currentPrice * 0.005) * 0.5;
+    let zoneLow = isLong ? (nearestSupport || pivotRelation.levels.s1) : (pivotRelation.levels.pivot);
+    let zoneHigh = isLong ? (pivotRelation.levels.pivot) : (nearestResistance || pivotRelation.levels.r1);
+    if (Math.abs(zoneHigh - zoneLow) < atrWidth) {
+      const mid = (zoneHigh + zoneLow) / 2;
+      zoneLow = mid - atrWidth / 2;
+      zoneHigh = mid + atrWidth / 2;
+    }
     const dirLabel = isLong ? "Long" : "Short";
     const zoneLabel = isLong ? "Hỗ trợ" : "Kháng cự";
     const slLabel = isLong ? "dưới Hỗ trợ" : "trên Kháng cự";
@@ -534,13 +580,19 @@ export class SignalEngine {
       },
       {
         step: 2,
-        title: "Đang chờ xác nhận mô hình nến đảo chiều",
-        description: "Theo dõi nến tiếp theo",
+        title: step2Status === "completed"
+          ? "Mô hình nến đã xác nhận tín hiệu"
+          : "Đang chờ xác nhận mô hình nến",
+        description: step2Status === "completed"
+          ? `Nến đóng cửa xác nhận hướng ${dirLabel}`
+          : "Theo dõi nến tiếp theo",
         status: step2Status,
       },
       {
         step: 3,
-        title: `Khi nến tiếp theo đóng cửa ${isLong ? "trên" : "dưới"} ${zoneLabel}`,
+        title: step3Status === "active"
+          ? `Giá đang trong vùng ${zoneLabel}`
+          : `Chờ giá vào vùng ${zoneLabel}`,
         description: `zone: ${Math.min(zoneLow, zoneHigh).toFixed(2)} - ${Math.max(zoneLow, zoneHigh).toFixed(2)}`,
         status: step3Status,
       },

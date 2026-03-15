@@ -412,7 +412,7 @@ export class Pipeline {
 
     const allTrendlines = Array.from(this.state.timeframeResults.values())
       .flatMap((r) => r.trendlines.activeTrendlines);
-    const trendlineCount = this.dedupeTrendlineCount(allTrendlines);
+    const trendlineCount = Math.min(5, this.dedupeTrendlineCount(allTrendlines));
 
     return {
       symbol: this.state.symbol,

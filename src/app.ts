@@ -305,7 +305,13 @@ function startStream() {
   healthService.setWebSocket("connecting");
   updateHealthIndicator();
 
-  feed.subscribe(currentSymbol, TIMEFRAMES, (_sym, tf, candle, _isClose) => {
+  const subscribedSymbol = currentSymbol;
+  feed.subscribe(subscribedSymbol, TIMEFRAMES, (sym, tf, candle, _isClose) => {
+    if (sym.toUpperCase() !== subscribedSymbol.toUpperCase() &&
+        candle.symbol?.toUpperCase() !== subscribedSymbol.toUpperCase()) {
+      return;
+    }
+
     const { closed } = candleManager.update(tf, candle);
     if (!closed) {
       pipeline.updateCandle(tf, candle);
@@ -425,11 +431,11 @@ function updateTrendlineTab(payload: UIPayload) {
     all.push(...(r as TimeframeAnalysisResult).trendlines.activeTrendlines);
   }
 
-  const deduped = dedupeTrendlines(all);
+  const deduped = dedupeTrendlines(all).slice(0, 5);
   document.getElementById("tl-count")!.textContent = String(deduped.length);
 
   if (!deduped.length) { c.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa phát hiện đường xu hướng</div>'; return; }
-  c.innerHTML = deduped.slice(0, 8).map((t) => {
+  c.innerHTML = deduped.map((t) => {
     const sup = t.type === "ascending_support";
     const interLabel = t.lastInteraction !== "none" ? t.lastInteraction : "";
     return `<div class="tl-item"><div><div class="tl-type ${sup ? "support" : "resistance"}">${sup ? "▲ Hỗ trợ" : "▼ Kháng cự"}</div><div class="tl-info">Touch:${t.touches} ${interLabel} ${t.distanceToPricePercent.toFixed(1)}%</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
