@@ -190,8 +190,10 @@ export class ScoringEngine {
   ): void {
     for (const line of tl.activeTrendlines) {
       const w = line.strength / 100;
+      const isSup = line.type === "ascending_support" || line.type === "horizontal_support";
+      const isRes = line.type === "descending_resistance" || line.type === "horizontal_resistance";
 
-      if (line.type === "ascending_support" && !line.isBroken) {
+      if (isSup && !line.isBroken) {
         if (line.lastInteraction === "bounce") {
           long.trendline += Math.round(15 * w);
         } else if (line.lastInteraction === "approaching") {
@@ -201,7 +203,7 @@ export class ScoringEngine {
         }
       }
 
-      if (line.type === "descending_resistance" && !line.isBroken) {
+      if (isRes && !line.isBroken) {
         if (line.lastInteraction === "bounce") {
           short.trendline += Math.round(15 * w);
         } else if (line.lastInteraction === "approaching") {
@@ -211,7 +213,7 @@ export class ScoringEngine {
         }
       }
 
-      if (line.type === "ascending_support" && line.isBroken) {
+      if (isSup && line.isBroken) {
         if (line.lastInteraction === "retest") {
           short.trendline += Math.round(18 * w);
         } else {
@@ -219,7 +221,7 @@ export class ScoringEngine {
         }
       }
 
-      if (line.type === "descending_resistance" && line.isBroken) {
+      if (isRes && line.isBroken) {
         if (line.lastInteraction === "retest") {
           long.trendline += Math.round(18 * w);
         } else {

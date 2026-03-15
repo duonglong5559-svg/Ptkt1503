@@ -1,4 +1,4 @@
-export type TrendlineType = "ascending_support" | "descending_resistance";
+export type TrendlineType = "ascending_support" | "descending_resistance" | "horizontal_support" | "horizontal_resistance";
 
 export type TrendlineInteraction =
   | "none"

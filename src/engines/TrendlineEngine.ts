@@ -9,6 +9,7 @@ import {
 } from "../types";
 
 const MAX_ACTIVE_LINES = 5;
+const ZONE_TOLERANCE = 0.004;
 const TOUCH_TOLERANCE_RATIO = 0.003;
 const APPROACH_DISTANCE_RATIO = 0.008;
 const BREAK_CONFIRM_RATIO = 0.002;
@@ -17,46 +18,30 @@ let lineIdCounter = 0;
 
 export class TrendlineEngine {
   analyze(input: TrendlineEngineInput): TrendlineEngineOutput {
-    const { candles, swings, currentPrice, currentIndex, symbol, timeframe } =
-      input;
+    const { candles, swings, currentPrice, currentIndex, symbol, timeframe } = input;
 
     if (swings.length < 2) {
       return this.emptyOutput(symbol, timeframe);
     }
 
-    const candidates: Trendline[] = [];
+    const closedCandles = candles.filter((c) => c.isClosed);
+    const swingLows = swings.filter((s) => s.type === "low");
+    const swingHighs = swings.filter((s) => s.type === "high");
 
-    const swingLows = swings.filter((s) => s.type === "low").slice(-15);
-    const swingHighs = swings.filter((s) => s.type === "high").slice(-15);
+    const levels = this.buildHorizontalLevels(swingHighs, swingLows, currentPrice, closedCandles, currentIndex);
+    this.detectHorizontalInteractions(levels, currentPrice);
+    levels.sort((a, b) => b.strength - a.strength);
 
-    this.buildAscendingLines(swingLows, candles, currentPrice, currentIndex, candidates);
-    this.buildDescendingLines(swingHighs, candles, currentPrice, currentIndex, candidates);
-
-    this.countTouches(candidates, candles, currentIndex);
-    this.scoreTrendlines(candidates, currentPrice, currentIndex);
-    this.detectInteractions(candidates, candles, currentPrice, currentIndex);
-
-    candidates.sort((a, b) => b.strength - a.strength);
-
-    const activeTrendlines = candidates
+    const activeTrendlines = levels
       .filter((t) => !t.isBroken && t.strength >= 30)
       .slice(0, MAX_ACTIVE_LINES);
 
-    const nearbyTrendlines = candidates
-      .filter(
-        (t) =>
-          t.distanceToPricePercent < 2.0 &&
-          !activeTrendlines.includes(t) &&
-          t.strength >= 20
-      )
+    const nearbyTrendlines = levels
+      .filter((t) => t.distanceToPricePercent < 2.0 && !activeTrendlines.includes(t) && t.strength >= 20)
       .slice(0, 3);
 
     const trendlineBias = this.computeBias(activeTrendlines, currentPrice);
-    const summary = this.buildSummary(
-      activeTrendlines,
-      nearbyTrendlines,
-      trendlineBias
-    );
+    const summary = this.buildSummary(activeTrendlines, nearbyTrendlines, trendlineBias);
 
     return {
       symbol,
@@ -70,281 +55,184 @@ export class TrendlineEngine {
     };
   }
 
-  private buildAscendingLines(
-    lows: SwingPoint[],
-    candles: Candle[],
-    currentPrice: number,
-    currentIndex: number,
-    out: Trendline[]
-  ): void {
-    for (let i = 0; i < lows.length - 1; i++) {
-      for (let j = i + 1; j < lows.length; j++) {
-        if (lows[j].price <= lows[i].price) continue;
-
-        const p1 = lows[i];
-        const p2 = lows[j];
-        const dx = p2.index - p1.index;
-        if (dx === 0) continue;
-
-        const slope = (p2.price - p1.price) / dx;
-        if (slope <= 0) continue;
-
-        const maxSlope = (currentPrice * 0.01) / 10;
-        if (slope > maxSlope) continue;
-
-        const intercept = p1.price - slope * p1.index;
-        const projectedPrice = slope * currentIndex + intercept;
-        const dist = currentPrice - projectedPrice;
-        const distPercent = (Math.abs(dist) / currentPrice) * 100;
-
-        if (distPercent > 5) continue;
-
-        out.push({
-          id: `asc_${++lineIdCounter}`,
-          type: "ascending_support",
-          points: {
-            x1: p1.index,
-            y1: p1.price,
-            x2: p2.index,
-            y2: p2.price,
-          },
-          slope,
-          intercept,
-          touches: 2,
-          strength: 50,
-          isBroken: false,
-          lastInteraction: "none",
-          distanceToPrice: Math.round(dist * 100) / 100,
-          distanceToPricePercent: Math.round(distPercent * 100) / 100,
-          createdAt: Date.now(),
-        });
-      }
-    }
-  }
-
-  private buildDescendingLines(
+  private buildHorizontalLevels(
     highs: SwingPoint[],
-    candles: Candle[],
+    lows: SwingPoint[],
     currentPrice: number,
-    currentIndex: number,
-    out: Trendline[]
-  ): void {
-    for (let i = 0; i < highs.length - 1; i++) {
-      for (let j = i + 1; j < highs.length; j++) {
-        if (highs[j].price >= highs[i].price) continue;
+    candles: Candle[],
+    currentIndex: number
+  ): Trendline[] {
+    const zones: Map<string, { price: number; type: TrendlineType; touches: number; swingIndices: number[]; strength: number }> = new Map();
 
-        const p1 = highs[i];
-        const p2 = highs[j];
-        const dx = p2.index - p1.index;
-        if (dx === 0) continue;
-
-        const slope = (p2.price - p1.price) / dx;
-        if (slope >= 0) continue;
-
-        const maxSlope = (currentPrice * 0.01) / 10;
-        if (Math.abs(slope) > maxSlope) continue;
-
-        const intercept = p1.price - slope * p1.index;
-        const projectedPrice = slope * currentIndex + intercept;
-        const dist = projectedPrice - currentPrice;
-        const distPercent = (Math.abs(dist) / currentPrice) * 100;
-
-        if (distPercent > 5) continue;
-
-        out.push({
-          id: `desc_${++lineIdCounter}`,
-          type: "descending_resistance",
-          points: {
-            x1: p1.index,
-            y1: p1.price,
-            x2: p2.index,
-            y2: p2.price,
-          },
-          slope,
-          intercept,
-          touches: 2,
-          strength: 50,
-          isBroken: false,
-          lastInteraction: "none",
-          distanceToPrice: Math.round(dist * 100) / 100,
-          distanceToPricePercent: Math.round(distPercent * 100) / 100,
-          createdAt: Date.now(),
+    for (const sw of lows) {
+      const key = this.findZoneKey(zones, sw.price);
+      if (key) {
+        const z = zones.get(key)!;
+        z.price = (z.price * z.touches + sw.price) / (z.touches + 1);
+        z.touches++;
+        z.swingIndices.push(sw.index);
+        z.strength = Math.min(100, z.strength + 12);
+      } else {
+        zones.set(`s_${sw.price.toFixed(2)}`, {
+          price: sw.price,
+          type: "horizontal_support",
+          touches: 1,
+          swingIndices: [sw.index],
+          strength: 35,
         });
       }
     }
-  }
 
-  private countTouches(
-    trendlines: Trendline[],
-    candles: Candle[],
-    currentIndex: number
-  ): void {
-    for (const line of trendlines) {
-      let touches = 0;
-      const startIdx = Math.min(line.points.x1, line.points.x2);
-      const endIdx = Math.min(currentIndex, candles.length - 1);
-
-      for (let i = startIdx; i <= endIdx; i++) {
-        const projected = line.slope * i + line.intercept;
-        const tol = Math.abs(projected) * TOUCH_TOLERANCE_RATIO;
-
-        if (line.type === "ascending_support") {
-          if (Math.abs(candles[i].low - projected) <= tol) touches++;
-        } else {
-          if (Math.abs(candles[i].high - projected) <= tol) touches++;
-        }
+    for (const sw of highs) {
+      const key = this.findZoneKey(zones, sw.price);
+      if (key) {
+        const z = zones.get(key)!;
+        z.price = (z.price * z.touches + sw.price) / (z.touches + 1);
+        z.touches++;
+        z.swingIndices.push(sw.index);
+        z.strength = Math.min(100, z.strength + 12);
+      } else {
+        zones.set(`r_${sw.price.toFixed(2)}`, {
+          price: sw.price,
+          type: "horizontal_resistance",
+          touches: 1,
+          swingIndices: [sw.index],
+          strength: 35,
+        });
       }
-
-      line.touches = Math.max(2, touches);
     }
-  }
 
-  private scoreTrendlines(
-    trendlines: Trendline[],
-    currentPrice: number,
-    currentIndex: number
-  ): void {
-    for (const line of trendlines) {
-      let score = 30;
+    const result: Trendline[] = [];
 
-      score += Math.min(30, (line.touches - 2) * 10);
+    for (const [, zone] of zones) {
+      if (zone.touches < 1) continue;
+      const dist = currentPrice - zone.price;
+      const distPercent = (Math.abs(dist) / currentPrice) * 100;
+      if (distPercent > 5) continue;
 
-      if (line.distanceToPricePercent < 0.5) score += 15;
-      else if (line.distanceToPricePercent < 1.0) score += 10;
-      else if (line.distanceToPricePercent < 2.0) score += 5;
+      const firstIdx = Math.min(...zone.swingIndices);
+      const lastIdx = Math.max(...zone.swingIndices);
+      const span = lastIdx - firstIdx;
 
-      const span = Math.abs(line.points.x2 - line.points.x1);
+      let score = zone.strength;
+      if (zone.touches >= 3) score += 15;
+      else if (zone.touches >= 2) score += 8;
       if (span > 30) score += 10;
       else if (span > 15) score += 5;
+      if (distPercent < 0.5) score += 12;
+      else if (distPercent < 1.0) score += 8;
+      else if (distPercent < 2.0) score += 4;
 
-      line.strength = Math.min(100, score);
+      const bodyTouches = this.countBodyTouches(candles, zone.price, currentIndex, zone.type);
+      score += Math.min(15, bodyTouches * 5);
+
+      result.push({
+        id: `hz_${++lineIdCounter}`,
+        type: zone.type,
+        points: {
+          x1: firstIdx,
+          y1: zone.price,
+          x2: Math.min(lastIdx + 20, currentIndex),
+          y2: zone.price,
+        },
+        slope: 0,
+        intercept: zone.price,
+        touches: zone.touches + bodyTouches,
+        strength: Math.min(100, score),
+        isBroken: false,
+        lastInteraction: "none",
+        distanceToPrice: Math.round(dist * 100) / 100,
+        distanceToPricePercent: Math.round(distPercent * 100) / 100,
+        createdAt: Date.now(),
+      });
     }
+
+    return result;
   }
 
-  private detectInteractions(
-    trendlines: Trendline[],
+  private findZoneKey(
+    zones: Map<string, { price: number }>,
+    price: number
+  ): string | undefined {
+    for (const [key, zone] of zones) {
+      if (Math.abs(zone.price - price) / price < ZONE_TOLERANCE) {
+        return key;
+      }
+    }
+    return undefined;
+  }
+
+  private countBodyTouches(
     candles: Candle[],
-    currentPrice: number,
-    currentIndex: number
-  ): void {
-    for (const line of trendlines) {
-      const projected = line.slope * currentIndex + line.intercept;
-      const tol = Math.abs(projected) * TOUCH_TOLERANCE_RATIO;
-      const approachDist = Math.abs(projected) * APPROACH_DISTANCE_RATIO;
-      const breakDist = Math.abs(projected) * BREAK_CONFIRM_RATIO;
-      const dist = currentPrice - projected;
+    levelPrice: number,
+    currentIndex: number,
+    type: TrendlineType
+  ): number {
+    let touches = 0;
+    const tol = levelPrice * TOUCH_TOLERANCE_RATIO;
+    const end = Math.min(currentIndex, candles.length - 1);
+    const start = Math.max(0, end - 80);
+
+    for (let i = start; i <= end; i++) {
+      if (type === "horizontal_support" || type === "ascending_support") {
+        if (Math.abs(candles[i].low - levelPrice) <= tol) touches++;
+      } else {
+        if (Math.abs(candles[i].high - levelPrice) <= tol) touches++;
+      }
+    }
+    return touches;
+  }
+
+  private detectHorizontalInteractions(levels: Trendline[], currentPrice: number): void {
+    for (const line of levels) {
+      const price = line.intercept;
+      const tol = price * TOUCH_TOLERANCE_RATIO;
+      const approachDist = price * APPROACH_DISTANCE_RATIO;
+      const breakDist = price * BREAK_CONFIRM_RATIO;
+      const dist = currentPrice - price;
       const absDist = Math.abs(dist);
 
       line.distanceToPrice = Math.round(dist * 100) / 100;
-      line.distanceToPricePercent =
-        Math.round((absDist / currentPrice) * 100 * 100) / 100;
+      line.distanceToPricePercent = Math.round((absDist / currentPrice) * 100 * 100) / 100;
 
-      if (line.type === "ascending_support") {
+      if (line.type === "horizontal_support") {
         if (dist < -breakDist) {
           line.isBroken = true;
-          line.lastInteraction = this.detectRetest(
-            line,
-            candles,
-            currentIndex,
-            "ascending_support"
-          );
-          if (line.lastInteraction !== "retest") {
-            line.lastInteraction = "break";
-          }
+          line.lastInteraction = "break";
         } else if (absDist <= tol) {
           line.lastInteraction = "touch";
-          if (currentIndex > 1 && candles[currentIndex - 1]?.close > projected) {
-            line.lastInteraction = "bounce";
-          }
         } else if (dist > 0 && dist <= approachDist) {
           line.lastInteraction = "approaching";
+        } else if (dist > approachDist) {
+          line.lastInteraction = "bounce";
         }
       } else {
         if (dist > breakDist) {
           line.isBroken = true;
-          line.lastInteraction = this.detectRetest(
-            line,
-            candles,
-            currentIndex,
-            "descending_resistance"
-          );
-          if (line.lastInteraction !== "retest") {
-            line.lastInteraction = "break";
-          }
+          line.lastInteraction = "break";
         } else if (absDist <= tol) {
           line.lastInteraction = "touch";
-          if (
-            currentIndex > 1 &&
-            candles[currentIndex - 1]?.close < projected
-          ) {
-            line.lastInteraction = "bounce";
-          }
         } else if (dist < 0 && absDist <= approachDist) {
           line.lastInteraction = "approaching";
+        } else if (dist < -approachDist) {
+          line.lastInteraction = "bounce";
         }
       }
     }
   }
 
-  private detectRetest(
-    line: Trendline,
-    candles: Candle[],
-    currentIndex: number,
-    type: TrendlineType
-  ): TrendlineInteraction {
-    const lookback = Math.min(5, currentIndex);
-    for (let i = currentIndex - 1; i >= currentIndex - lookback; i--) {
-      if (i < 0) break;
-      const projected = line.slope * i + line.intercept;
-      const tol = Math.abs(projected) * TOUCH_TOLERANCE_RATIO * 2;
-
-      if (type === "ascending_support") {
-        if (
-          Math.abs(candles[i].high - projected) <= tol &&
-          candles[i].close < projected
-        ) {
-          return "retest";
-        }
-      } else {
-        if (
-          Math.abs(candles[i].low - projected) <= tol &&
-          candles[i].close > projected
-        ) {
-          return "retest";
-        }
-      }
-    }
-    return "break";
-  }
-
-  private computeBias(
-    trendlines: Trendline[],
-    currentPrice: number
-  ): "bullish" | "bearish" | "neutral" {
+  private computeBias(trendlines: Trendline[], currentPrice: number): "bullish" | "bearish" | "neutral" {
     let bullPoints = 0;
     let bearPoints = 0;
 
     for (const line of trendlines) {
-      if (line.type === "ascending_support" && !line.isBroken) {
-        bullPoints += line.strength;
-      }
-      if (line.type === "descending_resistance" && !line.isBroken) {
-        bearPoints += line.strength;
-      }
-      if (
-        line.type === "ascending_support" &&
-        line.isBroken &&
-        line.lastInteraction === "retest"
-      ) {
-        bearPoints += line.strength * 0.7;
-      }
-      if (
-        line.type === "descending_resistance" &&
-        line.isBroken &&
-        line.lastInteraction === "retest"
-      ) {
-        bullPoints += line.strength * 0.7;
-      }
+      const isSup = line.type === "horizontal_support" || line.type === "ascending_support";
+      const isRes = line.type === "horizontal_resistance" || line.type === "descending_resistance";
+
+      if (isSup && !line.isBroken) bullPoints += line.strength;
+      if (isRes && !line.isBroken) bearPoints += line.strength;
+      if (isSup && line.isBroken) bearPoints += line.strength * 0.7;
+      if (isRes && line.isBroken) bullPoints += line.strength * 0.7;
     }
 
     const diff = bullPoints - bearPoints;
@@ -352,45 +240,25 @@ export class TrendlineEngine {
     return diff > 0 ? "bullish" : "bearish";
   }
 
-  private buildSummary(
-    active: Trendline[],
-    nearby: Trendline[],
-    bias: "bullish" | "bearish" | "neutral"
-  ): string {
+  private buildSummary(active: Trendline[], nearby: Trendline[], bias: "bullish" | "bearish" | "neutral"): string {
     const parts: string[] = [];
-    const ascCount = active.filter(
-      (t) => t.type === "ascending_support"
-    ).length;
-    const descCount = active.filter(
-      (t) => t.type === "descending_resistance"
-    ).length;
+    const supCount = active.filter((t) => t.type.includes("support")).length;
+    const resCount = active.filter((t) => t.type.includes("resistance")).length;
 
-    if (ascCount > 0) {
-      parts.push(`${ascCount} ascending support line(s)`);
-    }
-    if (descCount > 0) {
-      parts.push(`${descCount} descending resistance line(s)`);
-    }
+    if (supCount > 0) parts.push(`${supCount} vùng hỗ trợ`);
+    if (resCount > 0) parts.push(`${resCount} vùng kháng cự`);
 
-    const interacting = active.filter(
-      (t) => t.lastInteraction !== "none"
-    );
+    const interacting = active.filter((t) => t.lastInteraction !== "none");
     for (const t of interacting) {
-      parts.push(
-        `${t.type === "ascending_support" ? "Support" : "Resistance"} line: ${t.lastInteraction}`
-      );
+      const label = t.type.includes("support") ? "Hỗ trợ" : "Kháng cự";
+      parts.push(`${label} ${t.intercept.toFixed(2)}: ${t.lastInteraction}`);
     }
 
-    if (parts.length === 0) {
-      return "No significant trendlines detected.";
-    }
-    return parts.join(". ") + `. Trendline bias: ${bias}.`;
+    if (parts.length === 0) return "Chưa phát hiện vùng S/R đáng chú ý.";
+    return parts.join(". ") + `.`;
   }
 
-  private emptyOutput(
-    symbol: string,
-    timeframe: string
-  ): TrendlineEngineOutput {
+  private emptyOutput(symbol: string, timeframe: string): TrendlineEngineOutput {
     return {
       symbol,
       timeframe,
@@ -398,7 +266,7 @@ export class TrendlineEngine {
       nearbyTrendlines: [],
       trendlineCount: 0,
       trendlineBias: "neutral",
-      summary: "Insufficient data for trendline analysis.",
+      summary: "Chưa đủ dữ liệu để phân tích S/R.",
       updatedAt: Date.now(),
     };
   }

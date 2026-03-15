@@ -130,14 +130,14 @@ export class SignalEngine {
 
     const hasResistanceNearby = trendlineOutput.activeTrendlines.some(
       (t) =>
-        t.type === "descending_resistance" &&
+        (t.type === "descending_resistance" || t.type === "horizontal_resistance") &&
         !t.isBroken &&
         t.distanceToPricePercent < 1.0
     );
 
     const hasSupportNearby = trendlineOutput.activeTrendlines.some(
       (t) =>
-        t.type === "ascending_support" &&
+        (t.type === "ascending_support" || t.type === "horizontal_support") &&
         !t.isBroken &&
         t.distanceToPricePercent < 1.0
     );
@@ -243,7 +243,7 @@ export class SignalEngine {
 
     const supportTL = input.trendlineOutput.activeTrendlines.find(
       (t) =>
-        t.type === "ascending_support" &&
+        (t.type === "ascending_support" || t.type === "horizontal_support") &&
         !t.isBroken &&
         t.distanceToPrice > 0 &&
         t.distanceToPricePercent < 2
@@ -283,7 +283,7 @@ export class SignalEngine {
 
     const resistTL = input.trendlineOutput.activeTrendlines.find(
       (t) =>
-        t.type === "descending_resistance" &&
+        (t.type === "descending_resistance" || t.type === "horizontal_resistance") &&
         !t.isBroken &&
         t.distanceToPrice > 0 &&
         t.distanceToPricePercent < 2
