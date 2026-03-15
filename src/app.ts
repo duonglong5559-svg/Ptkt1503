@@ -5,62 +5,99 @@ import { BrowserFeed } from "./services/BrowserFeed";
 import { CandleStateManager } from "./services/CandleStateManager";
 import { Candle, UIPayload, PatternSignal, Trendline, TradingSignal } from "./types";
 
-const TIMEFRAMES = ["6h", "8h", "12h", "1h", "2h", "4h", "1d", "1w"];
+const TIMEFRAMES = ["15m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "1w"];
 const CANDLE_LIMIT = 200;
 
 let currentSymbol = "BTCUSDT";
-let selectedTf = "2h";
+let selectedTf = "1h";
 let pipeline: Pipeline;
 let feed: BrowserFeed;
 let candleManager: CandleStateManager;
-let chart: IChartApi;
-let candleSeries: ISeriesApi<"Candlestick">;
+let chart: IChartApi | null = null;
+let candleSeries: ISeriesApi<"Candlestick"> | null = null;
 let trendlineSeriesList: ISeriesApi<"Line">[] = [];
 let priceLines: any[] = [];
 let lastPayload: UIPayload | null = null;
 let currentPrice = 0;
 let chartCandleCache: Candle[] = [];
+let loadedTfCount = 0;
 
 // ── Bootstrap ───────────────────────────────────────────────
 async function init() {
+  log("Khởi động ứng dụng...");
   setupTabs();
   setupSymbolSelector();
-
   await loadSymbol(currentSymbol);
 }
 
 async function loadSymbol(symbol: string) {
-  showLoading(true);
+  showLoading(true, "Đang kết nối đến thị trường...");
   currentSymbol = symbol;
+  loadedTfCount = 0;
 
   if (feed) feed.close();
   feed = new BrowserFeed();
   pipeline = new Pipeline(symbol);
   candleManager = new CandleStateManager();
 
-  try {
-    for (const tf of TIMEFRAMES) {
-      try {
-        const candles = await feed.fetchKlines(symbol, tf, CANDLE_LIMIT);
+  // Load historical data for each timeframe
+  let firstLoaded = false;
+  for (const tf of TIMEFRAMES) {
+    try {
+      showLoading(true, `Đang tải ${tf.toUpperCase()}... (${loadedTfCount}/${TIMEFRAMES.length})`);
+      const candles = await feed.fetchKlines(symbol, tf, CANDLE_LIMIT);
+      if (candles.length > 0) {
         pipeline.initializeCache(tf, candles);
-        if (tf === selectedTf) chartCandleCache = candles;
-      } catch (_) {}
+        loadedTfCount++;
+        log(`✓ ${tf}: ${candles.length} nến`);
+
+        if (tf === selectedTf || (!firstLoaded && candles.length > 20)) {
+          chartCandleCache = candles;
+          if (!firstLoaded) { selectedTf = tf; firstLoaded = true; }
+        }
+      }
+    } catch (err: any) {
+      log(`✗ ${tf}: ${err.message || err}`);
     }
-
-    currentPrice = await feed.fetchPrice(symbol);
-    setupChart();
-    renderChartData();
-
-    const payload = pipeline.runFullAnalysis(currentPrice);
-    lastPayload = payload;
-    updateUI(payload);
-
-    startStream();
-  } catch (err: any) {
-    console.error("Init error:", err);
-  } finally {
-    showLoading(false);
   }
+
+  if (loadedTfCount === 0) {
+    showLoading(false);
+    showError("Không thể tải dữ liệu thị trường. Vui lòng kiểm tra kết nối internet và thử lại.");
+    return;
+  }
+
+  // Get current price
+  try {
+    currentPrice = await feed.fetchPrice(symbol);
+    log(`Giá hiện tại: ${currentPrice}`);
+  } catch {
+    const lastCandle = chartCandleCache[chartCandleCache.length - 1];
+    currentPrice = lastCandle?.close || 0;
+    log(`Dùng giá từ nến cuối: ${currentPrice}`);
+  }
+
+  // Setup chart and render
+  showLoading(true, "Đang vẽ biểu đồ...");
+  await waitForLayout();
+  setupChart();
+  renderChartData();
+
+  // Run analysis
+  showLoading(true, "Đang phân tích thị trường...");
+  const payload = pipeline.runFullAnalysis(currentPrice);
+  lastPayload = payload;
+  updateUI(payload);
+
+  showLoading(false);
+  hideError();
+
+  // Start streaming
+  startStream();
+}
+
+function waitForLayout(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
 // ── Chart Setup ─────────────────────────────────────────────
@@ -68,10 +105,14 @@ function setupChart() {
   const container = document.getElementById("chart-container")!;
   container.innerHTML = "";
   trendlineSeriesList = [];
+  priceLines = [];
+
+  const w = container.clientWidth || container.offsetWidth || window.innerWidth;
+  const h = container.clientHeight || container.offsetHeight || 300;
 
   chart = createChart(container, {
-    width: container.clientWidth,
-    height: container.clientHeight,
+    width: w,
+    height: h,
     layout: {
       background: { color: "#0a0e17" } as any,
       textColor: "#9e9e9e",
@@ -95,7 +136,7 @@ function setupChart() {
       visible: true,
       text: "Crypto and Forex Trading",
       color: "rgba(255,255,255,0.04)",
-      fontSize: 18,
+      fontSize: 16,
     },
   });
 
@@ -107,14 +148,21 @@ function setupChart() {
     wickDownColor: "#ef5350",
   });
 
-  const ro = new ResizeObserver(() => {
-    chart.resize(container.clientWidth, container.clientHeight);
+  const ro = new ResizeObserver((entries) => {
+    if (!chart) return;
+    for (const entry of entries) {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) chart.resize(width, height);
+    }
   });
   ro.observe(container);
 }
 
 function renderChartData() {
+  if (!candleSeries) return;
   const closed = chartCandleCache.filter((c) => c.isClosed);
+  if (closed.length === 0) return;
+
   const data: CandlestickData[] = closed.map((c) => ({
     time: (c.openTime / 1000) as UTCTimestamp,
     open: c.open,
@@ -123,10 +171,11 @@ function renderChartData() {
     close: c.close,
   }));
   candleSeries.setData(data);
-  chart.timeScale().fitContent();
+  chart?.timeScale().fitContent();
 }
 
 function updateChartCandle(candle: Candle) {
+  if (!candleSeries) return;
   candleSeries.update({
     time: (candle.openTime / 1000) as UTCTimestamp,
     open: candle.open,
@@ -137,28 +186,22 @@ function updateChartCandle(candle: Candle) {
 }
 
 function renderPatternMarkers(patterns: PatternSignal[], candles: Candle[]) {
+  if (!candleSeries) return;
   const closed = candles.filter((c) => c.isClosed);
   const markers: any[] = [];
 
+  const nameMap: Record<string, string> = {
+    doji: "Doji", hammer: "Hammer", inverted_hammer: "Inverted Hammer",
+    shooting_star: "Shooting Star", bullish_engulfing: "Bullish Engulfing",
+    bearish_engulfing: "Bearish Engulfing", morning_star: "Morning Star",
+    evening_star: "Evening Star", three_white_soldiers: "3 White Soldiers",
+    three_black_crows: "3 Black Crows",
+  };
+
   for (const p of patterns) {
-    const idx = p.candleIndex;
-    if (idx < 0 || idx >= closed.length) continue;
-    const c = closed[idx];
+    if (p.candleIndex < 0 || p.candleIndex >= closed.length) continue;
+    const c = closed[p.candleIndex];
     const isBull = p.direction === "bullish";
-
-    const nameMap: Record<string, string> = {
-      doji: "Doji",
-      hammer: "Hammer",
-      inverted_hammer: "Inverted Hammer",
-      shooting_star: "Shooting Star",
-      bullish_engulfing: "Bullish Engulfing",
-      bearish_engulfing: "Bearish Engulfing",
-      morning_star: "Morning Star",
-      evening_star: "Evening Star",
-      three_white_soldiers: "3 White Soldiers",
-      three_black_crows: "3 Black Crows",
-    };
-
     markers.push({
       time: (c.openTime / 1000) as UTCTimestamp,
       position: isBull ? "belowBar" : "aboveBar",
@@ -173,56 +216,29 @@ function renderPatternMarkers(patterns: PatternSignal[], candles: Candle[]) {
 }
 
 function renderEntryLines(signal: TradingSignal) {
+  if (!candleSeries) return;
   for (const pl of priceLines) {
     try { candleSeries.removePriceLine(pl); } catch (_) {}
   }
   priceLines = [];
-
   try {
     if (signal.entryLong) {
-      priceLines.push(candleSeries.createPriceLine({
-        price: signal.entryLong,
-        color: "#26a69a",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: `Buy ${signal.entryLong.toFixed(2)}`,
-      }));
+      priceLines.push(candleSeries.createPriceLine({ price: signal.entryLong, color: "#26a69a", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `Buy ${signal.entryLong.toFixed(2)}` }));
     }
     if (signal.entryShort) {
-      priceLines.push(candleSeries.createPriceLine({
-        price: signal.entryShort,
-        color: "#ef5350",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: `Sell ${signal.entryShort.toFixed(2)}`,
-      }));
+      priceLines.push(candleSeries.createPriceLine({ price: signal.entryShort, color: "#ef5350", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `Sell ${signal.entryShort.toFixed(2)}` }));
     }
     if (signal.target) {
-      priceLines.push(candleSeries.createPriceLine({
-        price: signal.target,
-        color: "#ffd700",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: true,
-        title: `Target ${signal.target.toFixed(2)}`,
-      }));
+      priceLines.push(candleSeries.createPriceLine({ price: signal.target, color: "#ffd700", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: `Target` }));
     }
     if (signal.stopLoss) {
-      priceLines.push(candleSeries.createPriceLine({
-        price: signal.stopLoss,
-        color: "#ff6d00",
-        lineWidth: 1,
-        lineStyle: LineStyle.Dotted,
-        axisLabelVisible: true,
-        title: `SL ${signal.stopLoss.toFixed(2)}`,
-      }));
+      priceLines.push(candleSeries.createPriceLine({ price: signal.stopLoss, color: "#ff6d00", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: `SL` }));
     }
   } catch (_) {}
 }
 
 function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
+  if (!chart) return;
   for (const s of trendlineSeriesList) {
     try { chart.removeSeries(s); } catch (_) {}
   }
@@ -238,30 +254,20 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
 
     const color = tl.type === "ascending_support" ? "rgba(38,166,154,0.7)" : "rgba(239,83,80,0.7)";
     const series = chart.addLineSeries({
-      color,
-      lineWidth: 1,
-      lineStyle: LineStyle.LargeDashed,
-      crosshairMarkerVisible: false,
-      priceLineVisible: false,
-      lastValueVisible: false,
+      color, lineWidth: 1, lineStyle: LineStyle.LargeDashed,
+      crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
     });
 
-    const extendBars = Math.min(20, closed.length - i2);
-    const extIdx = Math.min(i2 + extendBars, closed.length - 1);
+    const extIdx = Math.min(i2 + 20, closed.length - 1);
     const projectedPrice = tl.slope * extIdx + tl.intercept;
 
     const data: LineData[] = [
       { time: (closed[i1].openTime / 1000) as UTCTimestamp, value: tl.points.y1 },
       { time: (closed[i2].openTime / 1000) as UTCTimestamp, value: tl.points.y2 },
     ];
-
-    if (extIdx > i2 && extIdx < closed.length && projectedPrice > 0) {
-      data.push({
-        time: (closed[extIdx].openTime / 1000) as UTCTimestamp,
-        value: projectedPrice,
-      });
+    if (extIdx > i2 && projectedPrice > 0) {
+      data.push({ time: (closed[extIdx].openTime / 1000) as UTCTimestamp, value: projectedPrice });
     }
-
     series.setData(data);
     trendlineSeriesList.push(series);
   }
@@ -277,24 +283,17 @@ function startStream() {
       chartCandleCache.push(candle);
       if (chartCandleCache.length > 500) chartCandleCache.splice(0, chartCandleCache.length - 500);
     }
-
     const payload = pipeline.runFullAnalysis(candle.close);
     lastPayload = payload;
     updateUI(payload);
-
-    if (tf === selectedTf) {
-      renderChartData();
-      updateChartAnnotations(payload);
-    }
+    if (tf === selectedTf) { renderChartData(); updateChartAnnotations(payload); }
   });
 
   feed.subscribe(currentSymbol, TIMEFRAMES, (sym, tf, candle, isClose) => {
     const { closed } = candleManager.update(tf, candle);
     if (!closed) {
       pipeline.updateCandle(tf, candle);
-      if (tf === selectedTf) {
-        updateChartCandle(candle);
-      }
+      if (tf === selectedTf) updateChartCandle(candle);
       currentPrice = candle.close;
       updatePriceTag(candle.close);
     }
@@ -307,37 +306,28 @@ function updateUI(payload: UIPayload) {
   updateSignalBadge(payload.signal.direction, payload.signal.state);
   updateTimeframeCards(payload);
   updateMarquee(payload.signal.summary);
-  updateSignalSteps(payload);
-  updateConfidence(payload);
+  updateSignalSteps();
+  updateConfidence();
   updatePriceTag(payload.currentPrice);
   updateTrendlineTab(payload);
   updateChartAnnotations(payload);
-  updateNewsPanel();
 }
 
 function updateBiasBar(long: number, short: number) {
-  const lEl = document.getElementById("long-pct")!;
-  const sEl = document.getElementById("short-pct")!;
-  const lFill = document.getElementById("long-fill")!;
-  const sFill = document.getElementById("short-fill")!;
-
-  lEl.textContent = `${long}%`;
-  sEl.textContent = `${short}%`;
-  lFill.style.width = `${long}%`;
-  sFill.style.width = `${short}%`;
+  document.getElementById("long-pct")!.textContent = `${long}%`;
+  document.getElementById("short-pct")!.textContent = `${short}%`;
+  document.getElementById("long-fill")!.style.width = `${long}%`;
+  document.getElementById("short-fill")!.style.width = `${short}%`;
 }
 
 function updateSignalBadge(direction: string, state: string) {
   const badge = document.getElementById("signal-badge")!;
   if (direction === "long" || state.includes("long")) {
-    badge.textContent = "Lệnh Chờ Long";
-    badge.className = "badge badge-long";
+    badge.textContent = "Lệnh Chờ Long"; badge.className = "badge badge-long";
   } else if (direction === "short" || state.includes("short")) {
-    badge.textContent = "Lệnh Chờ Short";
-    badge.className = "badge badge-short";
+    badge.textContent = "Lệnh Chờ Short"; badge.className = "badge badge-short";
   } else {
-    badge.textContent = "Theo dõi";
-    badge.className = "badge badge-neutral";
+    badge.textContent = "Theo dõi"; badge.className = "badge badge-neutral";
   }
 }
 
@@ -348,38 +338,29 @@ function updateTimeframeCards(payload: UIPayload) {
   for (const tf of TIMEFRAMES) {
     const data = payload.timeframes[tf];
     const card = document.createElement("div");
-    card.className = `tf-card ${tf === selectedTf ? "active" : ""} ${data ? data.bias === "bullish" ? "bullish" : data.bias === "bearish" ? "bearish" : "" : ""}`;
+    const bias = data?.bias || "neutral";
+    card.className = `tf-card${tf === selectedTf ? " active" : ""}${bias === "bullish" ? " bullish" : bias === "bearish" ? " bearish" : ""}`;
 
-    const score = data ? (data.bias === "bullish" ? data.long : data.short) : 50;
-    const price = getPriceForTf(tf);
+    const cache = pipeline?.getState().candleCache.get(tf);
+    const price = cache && cache.length > 0 ? cache[cache.length - 1].close.toFixed(2) : "---";
 
     card.innerHTML = `<span class="tf-label">${tf.toUpperCase()}</span><span class="tf-price">${price}</span>`;
-
     card.addEventListener("click", () => switchTimeframe(tf));
     row.appendChild(card);
   }
 }
 
-function getPriceForTf(tf: string): string {
-  const cache = pipeline?.getState().candleCache.get(tf);
-  if (!cache || cache.length === 0) return "---";
-  const last = cache[cache.length - 1];
-  return last.close.toFixed(2);
-}
-
 function updateMarquee(text: string) {
-  const el = document.getElementById("marquee-text")!;
-  el.textContent = text;
+  document.getElementById("marquee-text")!.textContent = text;
 }
 
-function updateSignalSteps(payload: UIPayload) {
+function updateSignalSteps() {
   const container = document.getElementById("signal-steps")!;
-  const signal = pipeline.getState().lastSignal;
-  if (!signal || !signal.steps) {
+  const signal = pipeline?.getState().lastSignal;
+  if (!signal?.steps) {
     container.innerHTML = '<div class="step-card pending"><div class="step-num">?</div><div class="step-body"><div class="step-title">Đang phân tích...</div></div></div>';
     return;
   }
-
   container.innerHTML = signal.steps.map((s) => `
     <div class="step-card ${s.status}">
       <div class="step-num">${s.step}</div>
@@ -387,127 +368,96 @@ function updateSignalSteps(payload: UIPayload) {
         <div class="step-title">${s.title}</div>
         <div class="step-desc">${s.description}</div>
       </div>
-    </div>
-  `).join("");
+    </div>`).join("");
 }
 
-function updateConfidence(payload: UIPayload) {
+function updateConfidence() {
   const el = document.getElementById("confidence-value")!;
-  const signal = pipeline.getState().lastSignal;
-  const conf = signal?.overallConfidence ?? 0;
+  const conf = pipeline?.getState().lastSignal?.overallConfidence ?? 0;
   el.textContent = `${conf}%`;
   el.style.color = conf >= 70 ? "var(--green)" : conf >= 50 ? "var(--gold)" : "var(--red)";
 }
 
 function updatePriceTag(price: number) {
-  const el = document.getElementById("current-price-tag")!;
-  el.textContent = price.toFixed(2);
+  document.getElementById("current-price-tag")!.textContent = price.toFixed(2);
 }
 
 function updateTrendlineTab(payload: UIPayload) {
   document.getElementById("tl-count")!.textContent = String(payload.trendlineCount);
-
   const container = document.getElementById("trendline-list")!;
-  const results: TimeframeAnalysisResult[] = Array.from(pipeline.getState().timeframeResults.values());
   const allTL: Trendline[] = [];
-  for (const r of results) {
-    allTL.push(...r.trendlines.activeTrendlines);
+  for (const r of pipeline.getState().timeframeResults.values()) {
+    allTL.push(...(r as TimeframeAnalysisResult).trendlines.activeTrendlines);
   }
-
   if (allTL.length === 0) {
-    container.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px">Chưa phát hiện đường xu hướng đáng chú ý</div>';
+    container.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa phát hiện đường xu hướng đáng chú ý</div>';
     return;
   }
-
   container.innerHTML = allTL.slice(0, 10).map((tl) => {
-    const isSupport = tl.type === "ascending_support";
-    return `<div class="tl-item">
-      <div>
-        <div class="tl-type ${isSupport ? "support" : "resistance"}">${isSupport ? "▲ Hỗ trợ tăng" : "▼ Kháng cự giảm"}</div>
-        <div class="tl-info">Touches: ${tl.touches} | ${tl.lastInteraction} | Dist: ${tl.distanceToPricePercent.toFixed(2)}%</div>
-      </div>
-      <div class="tl-strength" style="color:${tl.strength >= 60 ? "var(--green)" : tl.strength >= 40 ? "var(--gold)" : "var(--text3)"}">${tl.strength}</div>
-    </div>`;
+    const sup = tl.type === "ascending_support";
+    return `<div class="tl-item"><div><div class="tl-type ${sup ? "support" : "resistance"}">${sup ? "▲ Hỗ trợ tăng" : "▼ Kháng cự giảm"}</div><div class="tl-info">Touches: ${tl.touches} | ${tl.lastInteraction} | Dist: ${tl.distanceToPricePercent.toFixed(2)}%</div></div><div class="tl-strength" style="color:${tl.strength >= 60 ? "var(--green)" : tl.strength >= 40 ? "var(--gold)" : "var(--text3)"}">${tl.strength}</div></div>`;
   }).join("");
 }
 
 function updateChartAnnotations(payload: UIPayload) {
-  const tfResult: TimeframeAnalysisResult | undefined = pipeline.getState().timeframeResults.get(selectedTf);
-  const signal = pipeline.getState().lastSignal;
-
+  const tfResult = pipeline?.getState().timeframeResults.get(selectedTf) as TimeframeAnalysisResult | undefined;
+  const signal = pipeline?.getState().lastSignal;
   if (tfResult && chartCandleCache.length > 0) {
     renderPatternMarkers(tfResult.patterns.patterns, chartCandleCache);
     renderTrendlines(tfResult.trendlines.activeTrendlines, chartCandleCache);
   }
-
-  if (signal) {
-    renderEntryLines(signal);
-  }
+  if (signal) renderEntryLines(signal);
 }
 
 // ── News ────────────────────────────────────────────────────
-const newsCategories = ["Tất cả", "Bitcoin", "Ethereum", "Solana", "XRP"];
-let activeNewsFilter = "Tất cả";
+let newsLoaded = false;
 
-function updateNewsPanel() {
+function loadNewsIfNeeded() {
+  if (newsLoaded) return;
+  newsLoaded = true;
+
   const filtersEl = document.getElementById("news-filters")!;
-  if (filtersEl.children.length === 0) {
-    filtersEl.innerHTML = newsCategories.map((c) =>
-      `<button class="news-filter ${c === activeNewsFilter ? "active" : ""}" data-cat="${c}">${c}</button>`
-    ).join("");
-
-    filtersEl.addEventListener("click", (e) => {
-      const btn = (e.target as HTMLElement).closest(".news-filter") as HTMLElement;
-      if (!btn) return;
-      activeNewsFilter = btn.dataset.cat || "Tất cả";
-      filtersEl.querySelectorAll(".news-filter").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      fetchNews();
-    });
-  }
-
+  const cats = ["Tất cả", "Bitcoin", "Ethereum", "Solana", "XRP"];
+  filtersEl.innerHTML = cats.map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}" data-cat="${c}">${c}</button>`).join("");
+  filtersEl.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest(".news-filter") as HTMLElement;
+    if (!btn) return;
+    filtersEl.querySelectorAll(".news-filter").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+  });
   fetchNews();
 }
 
 async function fetchNews() {
   const list = document.getElementById("news-list")!;
+  list.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Đang tải tin tức...</div>';
   try {
     const res = await fetch("https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest");
     const data = await res.json();
     const articles = (data.Data || []).slice(0, 8);
+    if (articles.length === 0) { list.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px">Không có tin tức</div>'; return; }
 
     list.innerHTML = articles.map((a: any) => {
-      const sentiment = analyzeSentiment(a.title + " " + (a.body || ""));
-      const sentClass = sentiment.score < 40 ? "negative" : sentiment.score > 60 ? "positive" : "neutral";
-      const sentLabel = sentiment.score < 40 ? "Tiêu cực" : sentiment.score > 60 ? "Tích cực" : "Trung tính";
-      const time = new Date(a.published_on * 1000).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short", year: "numeric" });
-
-      return `<div class="news-card">
-        <div class="news-source">${a.source_info?.name || a.source} · ${time}</div>
-        <div class="news-title">${a.title}</div>
-        <div class="news-sentiment ${sentClass}">
-          <strong>Phân tích cảm xúc: ${sentLabel} (${sentiment.score}%)</strong><br>
-          ${sentiment.description}
-        </div>
-      </div>`;
+      const s = analyzeSentiment(a.title + " " + (a.body || ""));
+      const cls = s.score < 40 ? "negative" : s.score > 60 ? "positive" : "neutral";
+      const label = s.score < 40 ? "Tiêu cực" : s.score > 60 ? "Tích cực" : "Trung tính";
+      const time = new Date(a.published_on * 1000).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
+      return `<div class="news-card"><div class="news-source">${a.source_info?.name || a.source} · ${time}</div><div class="news-title">${a.title}</div><div class="news-sentiment ${cls}"><strong>Phân tích cảm xúc: ${label} (${s.score}%)</strong><br>${s.description}</div></div>`;
     }).join("");
-  } catch (_) {
-    list.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px">Không thể tải tin tức</div>';
+  } catch {
+    list.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Không thể tải tin tức</div>';
   }
 }
 
-function analyzeSentiment(text: string): { score: number; description: string } {
-  const lower = text.toLowerCase();
-  const positiveWords = ["bull", "surge", "rally", "gain", "up", "high", "rise", "positive", "growth", "recover", "pump", "breakout", "buy"];
-  const negativeWords = ["bear", "crash", "drop", "fall", "down", "low", "decline", "negative", "loss", "sell", "dump", "fear", "risk", "warn"];
-
-  let pos = 0, neg = 0;
-  for (const w of positiveWords) if (lower.includes(w)) pos++;
-  for (const w of negativeWords) if (lower.includes(w)) neg++;
-
-  const total = pos + neg || 1;
-  const score = Math.round((pos / total) * 100);
-
+function analyzeSentiment(text: string) {
+  const l = text.toLowerCase();
+  const pos = ["bull","surge","rally","gain","up","high","rise","positive","growth","recover","pump","breakout","buy","strong","boost"];
+  const neg = ["bear","crash","drop","fall","down","low","decline","negative","loss","sell","dump","fear","risk","warn","weak","plunge"];
+  let p = 0, n = 0;
+  for (const w of pos) if (l.includes(w)) p++;
+  for (const w of neg) if (l.includes(w)) n++;
+  const t = p + n || 1;
+  const score = Math.round((p / t) * 100);
   if (score < 40) return { score, description: "Tin tức này có tác động tiêu cực mạnh đến thị trường. Có thể gây áp lực giảm giá." };
   if (score > 60) return { score, description: "Tin tức này có tác động tích cực đến thị trường. Có thể hỗ trợ đà tăng." };
   return { score: 50, description: "Tin tức trung tính, tác động không rõ ràng." };
@@ -516,7 +466,7 @@ function analyzeSentiment(text: string): { score: number; description: string } 
 // ── Timeframe Switch ────────────────────────────────────────
 async function switchTimeframe(tf: string) {
   selectedTf = tf;
-  const cache = pipeline.getState().candleCache.get(tf);
+  const cache = pipeline?.getState().candleCache.get(tf);
   if (cache && cache.length > 0) {
     chartCandleCache = [...cache];
   } else {
@@ -524,16 +474,10 @@ async function switchTimeframe(tf: string) {
       const candles = await feed.fetchKlines(currentSymbol, tf, CANDLE_LIMIT);
       pipeline.initializeCache(tf, candles);
       chartCandleCache = candles;
-    } catch (_) {
-      return;
-    }
+    } catch { return; }
   }
-
   renderChartData();
-  if (lastPayload) {
-    updateTimeframeCards(lastPayload);
-    updateChartAnnotations(lastPayload);
-  }
+  if (lastPayload) { updateTimeframeCards(lastPayload); updateChartAnnotations(lastPayload); }
 }
 
 // ── Tabs ────────────────────────────────────────────────────
@@ -542,13 +486,11 @@ function setupTabs() {
     const btn = (e.target as HTMLElement).closest(".tab") as HTMLElement;
     if (!btn) return;
     const tabName = btn.dataset.tab;
-
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
     btn.classList.add("active");
-
     document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-    const panel = document.getElementById(`panel-${tabName}`);
-    if (panel) panel.classList.add("active");
+    document.getElementById(`panel-${tabName}`)?.classList.add("active");
+    if (tabName === "analysis") loadNewsIfNeeded();
   });
 }
 
@@ -556,16 +498,39 @@ function setupTabs() {
 function setupSymbolSelector() {
   const sel = document.getElementById("symbol-select") as HTMLSelectElement;
   sel.value = currentSymbol;
-  sel.addEventListener("change", () => {
-    loadSymbol(sel.value);
-  });
+  sel.addEventListener("change", () => loadSymbol(sel.value));
 }
 
-// ── Loading ─────────────────────────────────────────────────
-function showLoading(show: boolean) {
+// ── Loading / Error ─────────────────────────────────────────
+function showLoading(show: boolean, msg?: string) {
   const el = document.getElementById("loading-overlay")!;
-  if (show) el.classList.remove("hidden");
-  else el.classList.add("hidden");
+  if (show) {
+    el.classList.remove("hidden");
+    const p = el.querySelector("p");
+    if (p && msg) p.textContent = msg;
+  } else {
+    el.classList.add("hidden");
+  }
+}
+
+function showError(msg: string) {
+  let el = document.getElementById("error-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "error-banner";
+    document.getElementById("app")!.prepend(el);
+  }
+  el.innerHTML = `<span>${msg}</span><button onclick="this.parentElement.remove()">✕</button>`;
+  el.style.cssText = "background:#3d1111;color:#ff6b6b;padding:10px 14px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #5a1a1a;flex-shrink:0";
+  el.querySelector("button")!.style.cssText = "background:none;border:none;color:#ff6b6b;font-size:16px;cursor:pointer;padding:0 4px";
+}
+
+function hideError() {
+  document.getElementById("error-banner")?.remove();
+}
+
+function log(msg: string) {
+  console.log(`[PTKT] ${msg}`);
 }
 
 // ── Start ───────────────────────────────────────────────────
