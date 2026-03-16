@@ -102,8 +102,9 @@ export function generateSwingTrendCandles(
     for (let step = 1; step <= candlesPerLeg; step++) {
       const close = start + ((end - start) * step) / candlesPerLeg;
       const open = lastClose;
-      const high = Math.max(open, close) + 1.2;
-      const low = Math.min(open, close) - 1.2;
+      const isRising = close >= open;
+      const high = Math.max(open, close) + (isRising ? 1.2 : 0.6);
+      const low = Math.min(open, close) - (isRising ? 0.6 : 1.2);
       candles.push(
         makeCandle({
           open,

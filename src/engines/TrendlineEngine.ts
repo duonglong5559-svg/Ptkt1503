@@ -90,14 +90,15 @@ export class TrendlineEngine {
         if (isAsc && slope <= 0) continue;
         if (!isAsc && slope >= 0) continue;
 
-        const maxSlope = atr * 0.15;
+        const maxSlope = atr * 0.5;
         if (Math.abs(slope) > maxSlope) continue;
 
         const intercept = p1.price - slope * p1.index;
         const projectedPrice = slope * currentIndex + intercept;
         const dist = currentPrice - projectedPrice;
         const distPercent = (Math.abs(dist) / currentPrice) * 100;
-        if (distPercent > 4) continue;
+        const normalizedDistance = Math.abs(dist) / (atr || 1);
+        if (distPercent > 8 && normalizedDistance > 4.5) continue;
 
         if (this.hasIntermediateSwingViolation(points, slope, intercept, p1.index, p2.index, type, atr)) continue;
 
