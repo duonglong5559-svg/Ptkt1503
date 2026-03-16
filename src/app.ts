@@ -10,7 +10,7 @@ import { CandleStateManager } from "./services/CandleStateManager";
 import { FeedHealthService } from "./services/FeedHealthService";
 import { NewsService } from "./services/NewsService";
 import { SymbolMapping } from "./services/SymbolMapping";
-import { Candle, UIPayload, PatternSignal, Trendline, TradingSignal, AppPhase, computeAppPhase } from "./types";
+import { Candle, UIPayload, PatternSignal, Trendline, TradingSignal, ReactionPlan, AppPhase, computeAppPhase } from "./types";
 import { ANALYSIS_TIMEFRAMES } from "./types/symbol";
 
 const TIMEFRAMES = [...ANALYSIS_TIMEFRAMES];
@@ -468,6 +468,7 @@ function updateUI(payload: UIPayload) {
   updateConfidence();
   updatePriceTag(payload.currentPrice);
   updateTrendlineTab(payload);
+  updateReactionPlans(payload);
   updateHealthIndicator();
   if (newsLoaded) {
     renderNewsFilters();
@@ -603,6 +604,85 @@ function updateTrendlineTab(payload: UIPayload) {
     const visualColor = getTrendlineColor(t);
     return `<div class="tl-item"><div><div class="tl-type ${isSup ? "support" : "resistance"}" style="color:${visualColor}">${typeLabel} ~${t.projectedPriceNow.toFixed(2)}</div><div class="tl-info">Touch:${t.touches} ${proxLabel} ${interLabel} ND:${t.normalizedDistance.toFixed(1)}</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
   }).join("");
+}
+
+function updateReactionPlans(payload: UIPayload) {
+  const container = document.getElementById("reaction-plan-list");
+  if (!container) return;
+
+  const plans = [...payload.reactionPlans].sort((a, b) => {
+    const selectedA = a.timeframe === selectedTf ? 1 : 0;
+    const selectedB = b.timeframe === selectedTf ? 1 : 0;
+    if (selectedA !== selectedB) return selectedB - selectedA;
+    if (a.side !== b.side) return a.side === "support" ? -1 : 1;
+    if (a.distanceAtr !== b.distanceAtr) return a.distanceAtr - b.distanceAtr;
+    return b.confidence - a.confidence;
+  });
+
+  if (plans.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa có vùng phản ứng đủ mạnh để lập kế hoạch.</div>';
+    return;
+  }
+
+  container.innerHTML = plans.map((plan) => {
+    const sideLabel = plan.side === "support" ? "HỖ TRỢ" : "KHÁNG CỰ";
+    const toneClass = getReactionStatusClass(plan.statusLabel);
+    const strengthClass = getReactionStrengthClass(plan.confidence);
+    const sourceLabel = plan.source === "trendline" ? "AUTO" : "PIVOT";
+    const guidance = escapeHtml(plan.guidance);
+    return `<article class="reaction-card ${plan.side}">
+      <div class="reaction-header">
+        <div class="reaction-title-wrap">
+          <span class="reaction-dot"></span>
+          <div>
+            <div class="reaction-title">${sideLabel} @ ${formatPlanPrice(plan.price)}</div>
+            <div class="reaction-subtitle">${guidance}</div>
+          </div>
+        </div>
+        <div class="reaction-badges">
+          <span class="reaction-badge auto">${sourceLabel}</span>
+          <span class="reaction-badge timeframe">${escapeHtml(plan.timeframe.toUpperCase())}</span>
+        </div>
+      </div>
+      <div class="reaction-metrics">
+        <span class="reaction-strength ${strengthClass}">${escapeHtml(getReactionStrengthLabel(plan.confidence))}</span>
+        <span> • ${plan.confidence}% tin cậy</span>
+        <span> • ${plan.touches} lần test</span>
+        <span> • RR 1:${plan.riskReward.toFixed(1)}</span>
+      </div>
+      <div class="reaction-status ${toneClass}">${escapeHtml(plan.statusLabel)}</div>
+      <div class="reaction-footer">
+        <div class="reaction-level">Entry: <strong>${formatPlanPrice(plan.entry)}</strong></div>
+        <div class="reaction-level">Scalp: <strong>${formatPlanPrice(plan.scalpTarget)}</strong> | Swing: <strong>${formatPlanPrice(plan.swingTarget)}</strong></div>
+        <div class="reaction-level">StopLoss: <strong>${formatPlanPrice(plan.stopLoss)}</strong> (${plan.autoAdjustPercent.toFixed(1)}%)</div>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+function getReactionStrengthLabel(confidence: number) {
+  if (confidence >= 90) return "Rất mạnh";
+  if (confidence >= 75) return "Mạnh";
+  if (confidence >= 60) return "Khá mạnh";
+  return "Trung bình";
+}
+
+function getReactionStrengthClass(confidence: number) {
+  if (confidence >= 90) return "very-strong";
+  if (confidence >= 75) return "strong";
+  if (confidence >= 60) return "moderate";
+  return "weak";
+}
+
+function getReactionStatusClass(statusLabel: string) {
+  if (statusLabel === "Đang phản ứng giá") return "ready";
+  if (statusLabel === "Chuẩn bị kế hoạch giao dịch") return "watch";
+  if (statusLabel === "Đã mất hiệu lực") return "invalid";
+  return "cold";
+}
+
+function formatPlanPrice(price: number) {
+  return `$${formatCompactPrice(price)}`;
 }
 
 function dedupeTrendlines(lines: Trendline[]): Trendline[] {
@@ -801,7 +881,11 @@ async function switchTimeframe(tf: string) {
   if (cache?.length) { chartCandleCache = [...cache]; }
   else { try { const c = await feed.fetchKlines(currentSymbol, tf, CANDLE_LIMIT); pipeline.initializeCache(tf, c); chartCandleCache = c; } catch { return; } }
   renderChartData();
-  if (lastPayload) { updateTimeframeCards(lastPayload); updateChartAnnotations(lastPayload); }
+  if (lastPayload) {
+    updateTimeframeCards(lastPayload);
+    updateReactionPlans(lastPayload);
+    updateChartAnnotations(lastPayload);
+  }
 }
 
 // ── Tabs ────────────────────────────────────────────────────

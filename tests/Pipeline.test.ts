@@ -28,6 +28,7 @@ export function testPipeline(assert: AssertFn) {
     assert(payload.signal.state !== undefined, "Signal state defined");
     assert(payload.feedHealth !== undefined, "feedHealth present in payload");
     assert(Array.isArray(payload.news), "news array present in payload");
+    assert(Array.isArray(payload.reactionPlans), "reaction plans array present in payload");
     assert(payload.signal.confidenceLong >= 0, "confidenceLong present");
     assert(payload.signal.confidenceShort >= 0, "confidenceShort present");
   }

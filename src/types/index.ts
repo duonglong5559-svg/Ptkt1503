@@ -36,6 +36,28 @@ export type TimeframeBias = {
   entryShort?: number;
 };
 
+export type ReactionPlan = {
+  id: string;
+  timeframe: string;
+  side: "support" | "resistance";
+  source: "trendline" | "pivot";
+  price: number;
+  entry: number;
+  scalpTarget: number;
+  swingTarget: number;
+  stopLoss: number;
+  riskReward: number;
+  confidence: number;
+  touches: number;
+  strength: number;
+  distanceAtr: number;
+  statusLabel: string;
+  guidance: string;
+  autoAdjustPercent: number;
+  isPrimary: boolean;
+  isBroken: boolean;
+};
+
 export type UIPayload = {
   symbol: string;
   displaySymbol: string;
@@ -69,6 +91,7 @@ export type UIPayload = {
 
   trendlineCount: number;
   pivotNarrative: string;
+  reactionPlans: ReactionPlan[];
 
   news: NewsItem[];
 
