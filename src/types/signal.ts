@@ -1,4 +1,4 @@
-import { TimeframeScore, EMAContext, VolumeContext } from "./scoring";
+import { TimeframeScore, EMAContext, VolumeContext, CandleConfirmationContext } from "./scoring";
 import { PivotRelation } from "./pivot";
 import { TrendlineEngineOutput } from "./trendline";
 
@@ -30,6 +30,8 @@ export type TradingSignal = {
 
   confidenceLong: number;
   confidenceShort: number;
+  tradeQualityScore?: number;
+  tradeQualityLabel?: string;
 
   entryLong?: number;
   entryShort?: number;
@@ -65,6 +67,7 @@ export type SignalEngineInput = {
   structureState: string;
   emaContext?: EMAContext;
   volumeContext?: VolumeContext;
+  candleConfirmation?: CandleConfirmationContext;
   currentPrice: number;
   atr?: number;
 

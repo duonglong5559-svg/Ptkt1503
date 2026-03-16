@@ -1,5 +1,5 @@
-import { Candle } from "../types";
-import { EMAContext, VolumeContext } from "../types/scoring";
+import { Candle, computeCandleMetrics, PivotRelation, TrendlineEngineOutput } from "../types";
+import { CandleConfirmationContext, EMAContext, VolumeContext } from "../types/scoring";
 
 function getClosedCandles(candles: Candle[]): Candle[] {
   return candles.filter((c) => c.isClosed);
@@ -130,5 +130,120 @@ export function computeVolumeContext(candles: Candle[], averagePeriod: number = 
       relativeVolume >= 1.25 &&
       ((last.close >= last.open && bullVolume >= bearVolume) ||
         (last.close < last.open && bearVolume >= bullVolume)),
+  };
+}
+
+export function computeCandleConfirmationContext(
+  candles: Candle[],
+  options: {
+    atr?: number;
+    structureState: string;
+    pivotRelation: PivotRelation;
+    trendlineOutput: TrendlineEngineOutput;
+    emaContext?: EMAContext;
+    nearestSupport?: number;
+    nearestResistance?: number;
+  }
+): CandleConfirmationContext {
+  const closed = getClosedCandles(candles);
+  const last = closed[closed.length - 1];
+  const previous = closed[closed.length - 2];
+
+  if (!last || !previous) {
+    return {
+      bullishBreakoutConfirmed: false,
+      bearishBreakdownConfirmed: false,
+      bullishRetestConfirmed: false,
+      bearishRetestConfirmed: false,
+      lastCandleDirection: "neutral",
+      bodyStrength: 0,
+      closeLocation: 0.5,
+      summary: "Chưa đủ nến đóng để xác nhận.",
+    };
+  }
+
+  const metrics = computeCandleMetrics(last);
+  const atr = options.atr || Math.max((last.high - last.low) * 0.8, last.close * 0.003);
+  const candleDirection =
+    last.close > last.open ? "bullish" : last.close < last.open ? "bearish" : "neutral";
+  const closeLocation = metrics.range > 0 ? (last.close - last.low) / metrics.range : 0.5;
+  const bodyStrength = Math.round(metrics.bodyRatio * 100);
+  const tolerance = Math.max(atr * 0.18, last.close * 0.0012);
+
+  const supportCandidates = [
+    options.nearestSupport,
+    options.pivotRelation.levels.s1,
+    options.pivotRelation.levels.pivot < last.close ? options.pivotRelation.levels.pivot : undefined,
+    options.trendlineOutput.primarySupport?.projectedPriceNow,
+    options.emaContext?.ema20,
+    options.emaContext?.ema50,
+  ].filter((value): value is number => value !== undefined && value <= last.close + tolerance);
+
+  const resistanceCandidates = [
+    options.nearestResistance,
+    options.pivotRelation.levels.r1,
+    options.pivotRelation.levels.pivot > last.close ? options.pivotRelation.levels.pivot : undefined,
+    options.trendlineOutput.primaryResistance?.projectedPriceNow,
+    options.emaContext?.ema20,
+    options.emaContext?.ema50,
+  ].filter((value): value is number => value !== undefined && value >= last.close - tolerance);
+
+  const supportLevel = supportCandidates.length > 0
+    ? supportCandidates.reduce((best, value) => (last.close - value < last.close - best ? value : best))
+    : undefined;
+  const resistanceLevel = resistanceCandidates.length > 0
+    ? resistanceCandidates.reduce((best, value) => (value - last.close < best - last.close ? value : best))
+    : undefined;
+
+  const bullishBreakoutConfirmed =
+    candleDirection === "bullish" &&
+    metrics.bodyRatio >= 0.45 &&
+    closeLocation >= 0.68 &&
+    (
+      (resistanceLevel !== undefined && previous.close <= resistanceLevel + tolerance * 0.2 && last.close > resistanceLevel + tolerance * 0.35) ||
+      (options.structureState === "breakout" && last.close > previous.high + tolerance * 0.15)
+    );
+
+  const bearishBreakdownConfirmed =
+    candleDirection === "bearish" &&
+    metrics.bodyRatio >= 0.45 &&
+    closeLocation <= 0.32 &&
+    (
+      (supportLevel !== undefined && previous.close >= supportLevel - tolerance * 0.2 && last.close < supportLevel - tolerance * 0.35) ||
+      (options.structureState === "breakdown" && last.close < previous.low - tolerance * 0.15)
+    );
+
+  const bullishRetestConfirmed =
+    candleDirection === "bullish" &&
+    metrics.bodyRatio >= 0.28 &&
+    closeLocation >= 0.55 &&
+    supportLevel !== undefined &&
+    last.low <= supportLevel + tolerance &&
+    last.close >= supportLevel;
+
+  const bearishRetestConfirmed =
+    candleDirection === "bearish" &&
+    metrics.bodyRatio >= 0.28 &&
+    closeLocation <= 0.45 &&
+    resistanceLevel !== undefined &&
+    last.high >= resistanceLevel - tolerance &&
+    last.close <= resistanceLevel;
+
+  const summaryParts: string[] = [];
+  if (bullishBreakoutConfirmed) summaryParts.push("Breakout Long được nến đóng xác nhận");
+  if (bearishBreakdownConfirmed) summaryParts.push("Breakdown Short được nến đóng xác nhận");
+  if (bullishRetestConfirmed) summaryParts.push("Retest Long giữ hỗ trợ");
+  if (bearishRetestConfirmed) summaryParts.push("Retest Short bị từ chối ở kháng cự");
+  if (summaryParts.length === 0) summaryParts.push("Nến đóng gần nhất chưa xác nhận rõ breakout/retest");
+
+  return {
+    bullishBreakoutConfirmed,
+    bearishBreakdownConfirmed,
+    bullishRetestConfirmed,
+    bearishRetestConfirmed,
+    lastCandleDirection: candleDirection,
+    bodyStrength,
+    closeLocation: Math.round(closeLocation * 100) / 100,
+    summary: summaryParts.join(". "),
   };
 }

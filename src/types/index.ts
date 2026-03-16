@@ -52,6 +52,8 @@ export type UIPayload = {
     direction: "long" | "short" | "neutral";
     confidenceLong: number;
     confidenceShort: number;
+    tradeQualityScore?: number;
+    tradeQualityLabel?: string;
     entryLong?: number;
     entryShort?: number;
     stopLoss?: number;

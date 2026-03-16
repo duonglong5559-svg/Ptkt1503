@@ -287,5 +287,79 @@ export function testSignalEngine(assert: AssertFn) {
       result.state === "idle" || result.state === "watch_long",
       `Poor RR does not promote long setup (got ${result.state})`
     );
+    assert((result.tradeQualityScore || 0) < 58, "Poor RR lowers trade quality score");
+  }
+
+  // Test: breakout setup needs candle confirmation to reach ready state
+  {
+    const breakoutInput = {
+      symbol: "BTCUSDT",
+      timeframeScores: makeScores("bullish"),
+      globalLongPercent: 73,
+      globalShortPercent: 27,
+      pivotRelation: makePivot({ state: "above_pivot", directionBias: "bullish" }),
+      trendlineOutput: makeTL(),
+      structureState: "breakout" as const,
+      emaContext: {
+        ema20: 5198,
+        ema50: 5186,
+        ema200: 5140,
+        priceAboveEma20: true,
+        priceAboveEma50: true,
+        bullishAligned: true,
+        bearishAligned: false,
+        ema20Slope: 0.5,
+        ema50Slope: 0.3,
+        ema200Slope: 0.1,
+      },
+      volumeContext: {
+        currentVolume: 1700,
+        averageVolume: 1000,
+        relativeVolume: 1.7,
+        bullVolumeRatio: 0.64,
+        bearVolumeRatio: 0.36,
+        trend: "expanding" as const,
+        breakoutConfirmed: true,
+      },
+      currentPrice: 5202,
+      atr: 15,
+      currentTime: Date.now(),
+    };
+
+    const unconfirmed = engine.evaluate({
+      ...breakoutInput,
+      candleConfirmation: {
+        bullishBreakoutConfirmed: false,
+        bearishBreakdownConfirmed: false,
+        bullishRetestConfirmed: false,
+        bearishRetestConfirmed: false,
+        lastCandleDirection: "bullish",
+        bodyStrength: 58,
+        closeLocation: 0.74,
+        summary: "Nến mạnh nhưng chưa xác nhận breakout rõ ràng.",
+      },
+    });
+    const confirmed = engine.evaluate({
+      ...breakoutInput,
+      candleConfirmation: {
+        bullishBreakoutConfirmed: true,
+        bearishBreakdownConfirmed: false,
+        bullishRetestConfirmed: false,
+        bearishRetestConfirmed: false,
+        lastCandleDirection: "bullish",
+        bodyStrength: 68,
+        closeLocation: 0.82,
+        summary: "Breakout Long được nến đóng xác nhận.",
+      },
+    });
+
+    assert(
+      unconfirmed.state !== "ready_long",
+      `Breakout without candle confirmation is not ready_long (got ${unconfirmed.state})`
+    );
+    assert(
+      confirmed.state === "ready_long" || confirmed.state === "watch_long",
+      `Confirmed breakout keeps long setup promotable (got ${confirmed.state})`
+    );
   }
 }

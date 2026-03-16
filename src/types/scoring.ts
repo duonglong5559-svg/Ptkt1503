@@ -37,6 +37,17 @@ export type VolumeContext = {
   breakoutConfirmed: boolean;
 };
 
+export type CandleConfirmationContext = {
+  bullishBreakoutConfirmed: boolean;
+  bearishBreakdownConfirmed: boolean;
+  bullishRetestConfirmed: boolean;
+  bearishRetestConfirmed: boolean;
+  lastCandleDirection: "bullish" | "bearish" | "neutral";
+  bodyStrength: number;
+  closeLocation: number;
+  summary: string;
+};
+
 export type TimeframeScore = {
   symbol: string;
   timeframe: string;
@@ -70,6 +81,7 @@ export type ScoringEngineInput = {
   momentumScore?: number;
   emaContext?: EMAContext;
   volumeContext?: VolumeContext;
+  candleConfirmation?: CandleConfirmationContext;
   currentPrice: number;
 };
 

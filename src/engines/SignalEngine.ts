@@ -23,6 +23,8 @@ type MarketRegime =
   | "transition"
   | "no_trade";
 
+type TradeQualityLabel = "poor" | "fair" | "good" | "excellent";
+
 export class SignalEngine {
   evaluate(input: SignalEngineInput): TradingSignal {
     const {
@@ -58,12 +60,24 @@ export class SignalEngine {
       stopLoss,
       takeProfit
     );
+    const tradeQualityScore = this.computeTradeQualityScore(
+      input,
+      direction,
+      state,
+      rr,
+      entryLong,
+      entryShort,
+      stopLoss,
+      target
+    );
+    const tradeQualityLabel = this.getTradeQualityLabel(tradeQualityScore);
 
     const qualityState = this.applyQualityGates(
       input,
       state,
       direction,
       rr,
+      tradeQualityScore,
       entryLong,
       entryShort,
       stopLoss,
@@ -91,6 +105,8 @@ export class SignalEngine {
       direction,
       confidenceLong: globalLongPercent,
       confidenceShort: globalShortPercent,
+      tradeQualityScore,
+      tradeQualityLabel,
       entryLong,
       entryShort,
       stopLoss,
@@ -124,6 +140,7 @@ export class SignalEngine {
       structureState,
       emaContext,
       volumeContext,
+      candleConfirmation,
     } = input;
 
     const bigFramesBearish = this.countBigFramesBias(timeframeScores, "bearish");
@@ -186,6 +203,10 @@ export class SignalEngine {
     const breakoutVolumeSupportsShort =
       !volumeContext ||
       (volumeContext.breakoutConfirmed && volumeContext.bearVolumeRatio >= volumeContext.bullVolumeRatio);
+    const breakoutCandleSupportsLong = !candleConfirmation || candleConfirmation.bullishBreakoutConfirmed;
+    const breakoutCandleSupportsShort = !candleConfirmation || candleConfirmation.bearishBreakdownConfirmed;
+    const retestCandleSupportsLong = !candleConfirmation || candleConfirmation.bullishRetestConfirmed;
+    const retestCandleSupportsShort = !candleConfirmation || candleConfirmation.bearishRetestConfirmed;
 
     const longContextReady = structureSupportsLong || hasSupportNearby || supportInTouchZone;
     const shortContextReady = structureSupportsShort || hasResistanceNearby || resistanceInTouchZone;
@@ -246,15 +267,15 @@ export class SignalEngine {
     }
 
     if (canWatchShort && globalShortPercent >= READY_THRESHOLD) {
-      if (resistanceInTouchZone) return "ready_short";
-      if (hasBrokenSupportBelow && globalShortPercent >= 65 && breakoutVolumeSupportsShort) return "ready_short";
+      if (resistanceInTouchZone && retestCandleSupportsShort) return "ready_short";
+      if (hasBrokenSupportBelow && globalShortPercent >= 65 && breakoutVolumeSupportsShort && breakoutCandleSupportsShort) return "ready_short";
       if (hasResistanceNearby) return "watch_short";
       return "watch_short";
     }
 
     if (canWatchLong && globalLongPercent >= READY_THRESHOLD) {
-      if (supportInTouchZone) return "ready_long";
-      if (structureState === "breakout" && breakoutVolumeSupportsLong) return "ready_long";
+      if (supportInTouchZone && retestCandleSupportsLong) return "ready_long";
+      if (structureState === "breakout" && breakoutVolumeSupportsLong && breakoutCandleSupportsLong) return "ready_long";
       if (hasSupportNearby) return "watch_long";
       return "watch_long";
     }
@@ -310,6 +331,7 @@ export class SignalEngine {
     state: SignalState,
     direction: "long" | "short" | "neutral",
     rr: number | undefined,
+    tradeQualityScore: number,
     entryLong?: number,
     entryShort?: number,
     stopLoss?: number,
@@ -328,6 +350,11 @@ export class SignalEngine {
       ? ["ready_long", "triggered_long", "active_long"]
       : ["ready_short", "triggered_short", "active_short"];
 
+    if (tradeQualityScore < 40) return "idle";
+    if (tradeQualityScore < 58) {
+      return hardStates.includes(state) ? fallbackState : state === fallbackState ? fallbackState : "idle";
+    }
+
     if (!entry || !stopLoss || !takeProfit) {
       return hardStates.includes(state) ? fallbackState : state;
     }
@@ -342,6 +369,76 @@ export class SignalEngine {
     }
 
     return state;
+  }
+
+  private computeTradeQualityScore(
+    input: SignalEngineInput,
+    direction: "long" | "short" | "neutral",
+    state: SignalState,
+    rr: number | undefined,
+    entryLong?: number,
+    entryShort?: number,
+    stopLoss?: number,
+    target?: number
+  ): number {
+    if (direction === "neutral") return 25;
+
+    const regime = this.deriveMarketRegime(input);
+    const entry = direction === "long" ? entryLong : entryShort;
+    let score = 40;
+
+    if (regime === "trend_long" || regime === "trend_short") score += 10;
+    else if (regime === "breakout_long" || regime === "breakdown_short") score += 12;
+    else if (regime === "range_reversal") score += 4;
+    else if (regime === "transition" || regime === "no_trade") score -= 18;
+
+    if (rr !== undefined) {
+      if (rr >= 2) score += 18;
+      else if (rr >= 1.5) score += 12;
+      else if (rr >= RR_MIN) score += 6;
+      else if (rr >= 1) score -= 8;
+      else score -= 18;
+    } else {
+      score -= 12;
+    }
+
+    if (input.emaContext?.bullishAligned && direction === "long") score += 8;
+    if (input.emaContext?.bearishAligned && direction === "short") score += 8;
+    if (input.volumeContext?.relativeVolume && input.volumeContext.relativeVolume >= 1.2) score += 6;
+    if (input.volumeContext?.relativeVolume && input.volumeContext.relativeVolume < 0.8) score -= 8;
+
+    if (input.candleConfirmation) {
+      if (direction === "long") {
+        if (input.candleConfirmation.bullishBreakoutConfirmed || input.candleConfirmation.bullishRetestConfirmed) score += 10;
+      } else {
+        if (input.candleConfirmation.bearishBreakdownConfirmed || input.candleConfirmation.bearishRetestConfirmed) score += 10;
+      }
+    }
+
+    if (input.atr && entry && stopLoss) {
+      const stopAtr = Math.abs(entry - stopLoss) / input.atr;
+      if (stopAtr <= 1.2) score += 8;
+      else if (stopAtr <= 2.2) score += 2;
+      else score -= 10;
+    }
+
+    if (entry && target && input.atr) {
+      const roomAtr = Math.abs(target - entry) / input.atr;
+      if (roomAtr >= 1.3) score += 6;
+      else if (roomAtr < 0.7) score -= 6;
+    }
+
+    if (state === "ready_long" || state === "ready_short") score += 4;
+    if (state === "triggered_long" || state === "triggered_short") score += 6;
+
+    return Math.max(5, Math.min(99, Math.round(score)));
+  }
+
+  private getTradeQualityLabel(score: number): TradeQualityLabel {
+    if (score >= 82) return "excellent";
+    if (score >= 68) return "good";
+    if (score >= 52) return "fair";
+    return "poor";
   }
 
   private resolveDirection(
@@ -683,6 +780,7 @@ export class SignalEngine {
 
     const parts: string[] = [];
     parts.push(pivotRelation.narrative);
+    if (input.candleConfirmation?.summary) parts.push(input.candleConfirmation.summary);
 
     if (state === "ready_short" || state === "watch_short") {
       if (entryShort) {
@@ -864,9 +962,25 @@ export class SignalEngine {
   ): string[] {
     const details: string[] = [];
     const regime = this.deriveMarketRegime(input);
+    const rr = direction === "long"
+      ? this.computeRR(direction, entryLong, stopLoss, takeProfit)
+      : direction === "short"
+      ? this.computeRR(direction, entryShort, stopLoss, takeProfit)
+      : undefined;
+    const qualityScore = this.computeTradeQualityScore(
+      input,
+      direction,
+      state,
+      rr,
+      entryLong,
+      entryShort,
+      stopLoss,
+      target
+    );
 
     details.push(`State: ${state}`);
     details.push(`Direction: ${direction}`);
+    details.push(`Trade quality: ${this.getTradeQualityLabel(qualityScore)} (${qualityScore})`);
     details.push(
       `Global bias: Long ${input.globalLongPercent}% / Short ${input.globalShortPercent}%`
     );
@@ -891,6 +1005,9 @@ export class SignalEngine {
       details.push(
         `Volume: RVOL ${input.volumeContext.relativeVolume.toFixed(2)} / bull ${Math.round(input.volumeContext.bullVolumeRatio * 100)}% / bear ${Math.round(input.volumeContext.bearVolumeRatio * 100)}%`
       );
+    }
+    if (input.candleConfirmation) {
+      details.push(`Confirmation: ${input.candleConfirmation.summary}`);
     }
 
     const bigFrames = input.timeframeScores.filter((s) =>

@@ -12,6 +12,7 @@ import {
   NewsItem,
   EMAContext,
   VolumeContext,
+  CandleConfirmationContext,
   createInitialFeedHealth,
 } from "../types";
 import {
@@ -31,6 +32,7 @@ import {
   computeSRLevels,
   computeEMAContext,
   computeVolumeContext,
+  computeCandleConfirmationContext,
 } from "../utils";
 import { StructureEngineOutput } from "../engines/StructureEngine";
 import { SymbolMapping } from "./SymbolMapping";
@@ -54,6 +56,7 @@ export type TimeframeAnalysisResult = {
   atr: number;
   emaContext: EMAContext;
   volumeContext: VolumeContext;
+  candleConfirmation: CandleConfirmationContext;
 };
 
 const ANALYSIS_TIMEFRAMES = [
@@ -168,6 +171,7 @@ export class Pipeline {
       structureState: primaryResult?.structure.state || "range",
       emaContext: primaryResult?.emaContext,
       volumeContext: primaryResult?.volumeContext,
+      candleConfirmation: primaryResult?.candleConfirmation,
       currentPrice,
       atr: primaryResult?.atr,
       nearestSupport: primaryResult?.pivotRelation.nearestSupport,
@@ -292,6 +296,15 @@ export class Pipeline {
       currentIndex: trendlineCandles.length - 1,
       atr,
     });
+    const candleConfirmation = computeCandleConfirmationContext(candles, {
+      atr,
+      structureState: structure.state,
+      pivotRelation,
+      trendlineOutput: trendlines,
+      emaContext,
+      nearestSupport: srContext.nearestSupport,
+      nearestResistance: srContext.nearestResistance,
+    });
 
     const score = this.scoringEngine.scoreTimeframe({
       symbol: this.state.symbol,
@@ -302,6 +315,7 @@ export class Pipeline {
       structureState: structure.state,
       emaContext,
       volumeContext,
+      candleConfirmation,
       srContext: {
         nearestSupport: srContext.nearestSupport,
         nearestResistance: srContext.nearestResistance,
@@ -323,6 +337,7 @@ export class Pipeline {
       atr,
       emaContext,
       volumeContext,
+      candleConfirmation,
     };
   }
 
@@ -442,6 +457,8 @@ export class Pipeline {
         direction: signal.direction,
         confidenceLong: signal.confidenceLong,
         confidenceShort: signal.confidenceShort,
+        tradeQualityScore: signal.tradeQualityScore,
+        tradeQualityLabel: signal.tradeQualityLabel,
         entryLong: signal.entryLong,
         entryShort: signal.entryShort,
         stopLoss: signal.stopLoss,
