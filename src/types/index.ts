@@ -30,6 +30,10 @@ export type TimeframeBias = {
   short: number;
   state: "bullish" | "bearish" | "mixed";
   bias: "bullish" | "bearish" | "neutral";
+  support?: number;
+  resistance?: number;
+  entryLong?: number;
+  entryShort?: number;
 };
 
 export type UIPayload = {

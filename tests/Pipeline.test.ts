@@ -50,6 +50,32 @@ export function testPipeline(assert: AssertFn) {
     assert(payload.globalBias.long >= 0, "Long bias is non-negative");
   }
 
+  // Test: timeframe reaction levels are preserved separately
+  {
+    const pipeline = new Pipeline("BTCUSDT");
+    const candles1h = generateTrendCandles("up", 100, 3000, 3);
+    const candles4h = generateTrendCandles("up", 80, 6200, 7);
+    const candles1d = generateTrendCandles("up", 40, 9000, 12);
+    pipeline.initializeCache("1h", candles1h);
+    pipeline.initializeCache("4h", candles4h);
+    pipeline.initializeCache("1d", candles1d);
+
+    const payload = pipeline.runFullAnalysis(candles1h[candles1h.length - 1].close);
+    const tf1h = payload.timeframes["1h"];
+    const tf4h = payload.timeframes["4h"];
+
+    assert(tf1h !== undefined && tf4h !== undefined, "Both 1h and 4h timeframe payloads exist");
+    assert(
+      !!tf1h && !!tf4h && (
+        tf1h.support !== tf4h.support ||
+        tf1h.resistance !== tf4h.resistance ||
+        tf1h.entryLong !== tf4h.entryLong ||
+        tf1h.entryShort !== tf4h.entryShort
+      ),
+      "Different timeframes preserve distinct reaction levels"
+    );
+  }
+
   // Test: candle update
   {
     const pipeline = new Pipeline("BTCUSDT");

@@ -428,15 +428,31 @@ export class Pipeline {
     const timeframes: UIPayload["timeframes"] = {};
 
     for (const s of aggregated.timeframeScores) {
+      const timeframeResult = this.state.timeframeResults.get(s.timeframe);
       let state: "bullish" | "bearish" | "mixed" = "mixed";
       if (s.dominantBias === "bullish") state = "bullish";
       else if (s.dominantBias === "bearish") state = "bearish";
+
+      const reaction = timeframeResult
+        ? this.signalEngine.estimateReactionLevels({
+            currentPrice,
+            atr: timeframeResult.atr,
+            pivotRelation: timeframeResult.pivotRelation,
+            trendlineOutput: timeframeResult.trendlines,
+            nearestSupport: timeframeResult.pivotRelation.nearestSupport,
+            nearestResistance: timeframeResult.pivotRelation.nearestResistance,
+          })
+        : {};
 
       timeframes[s.timeframe] = {
         long: s.longScore,
         short: s.shortScore,
         state,
         bias: s.dominantBias,
+        support: reaction.support,
+        resistance: reaction.resistance,
+        entryLong: reaction.entryLong,
+        entryShort: reaction.entryShort,
       };
     }
 

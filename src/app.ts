@@ -277,6 +277,17 @@ function renderEntryLines(signal: TradingSignal) {
   }
 }
 
+function getSelectedTimeframeDisplaySignal(signal: TradingSignal): TradingSignal {
+  const tfData = lastPayload?.timeframes[selectedTf];
+  if (!tfData) return signal;
+
+  return {
+    ...signal,
+    entryLong: tfData.entryLong ?? signal.entryLong,
+    entryShort: tfData.entryShort ?? signal.entryShort,
+  };
+}
+
 function getTrendlineColor(tl: Trendline, alpha = 1): string {
   const strengthRatio = Math.max(0, Math.min(1, tl.strength / 100));
   const glowBoost = Math.round(strengthRatio * 80);
@@ -493,14 +504,13 @@ function updateTimeframeCards(payload: UIPayload) {
   for (const tf of TIMEFRAMES) {
     const d = payload.timeframes[tf];
     const card = document.createElement("div");
-    const levels = getTimeframeDisplayLevels(tf);
     if (d) {
       const bias = d.bias || "neutral";
       card.className = `tf-card${tf === selectedTf ? " active" : ""}${bias === "bullish" ? " bullish" : bias === "bearish" ? " bearish" : ""}`;
       card.innerHTML = `
-        <span class="tf-level tf-top support${levels.support === undefined ? " empty" : ""}">${formatCompactPrice(levels.support)}</span>
+        <span class="tf-level tf-top support${d.support === undefined ? " empty" : ""}">${formatCompactPrice(d.support)}</span>
         <span class="tf-label">${tf.toUpperCase()}</span>
-        <span class="tf-level tf-bottom resistance${levels.resistance === undefined ? " empty" : ""}">${formatCompactPrice(levels.resistance)}</span>
+        <span class="tf-level tf-bottom resistance${d.resistance === undefined ? " empty" : ""}">${formatCompactPrice(d.resistance)}</span>
       `;
     } else {
       card.className = `tf-card${tf === selectedTf ? " active" : ""}`;
@@ -513,23 +523,6 @@ function updateTimeframeCards(payload: UIPayload) {
     card.onclick = () => switchTimeframe(tf);
     row.appendChild(card);
   }
-}
-
-function getTimeframeDisplayLevels(tf: string): { support?: number; resistance?: number } {
-  const result = pipeline?.getState().timeframeResults.get(tf) as TimeframeAnalysisResult | undefined;
-  if (!result) return {};
-
-  const trendlineSupport = result.trendlines.primarySupport && !result.trendlines.primarySupport.isBroken
-    ? result.trendlines.primarySupport.projectedPriceNow
-    : undefined;
-  const trendlineResistance = result.trendlines.primaryResistance && !result.trendlines.primaryResistance.isBroken
-    ? result.trendlines.primaryResistance.projectedPriceNow
-    : undefined;
-
-  return {
-    support: trendlineSupport ?? result.pivotRelation.nearestSupport,
-    resistance: trendlineResistance ?? result.pivotRelation.nearestResistance,
-  };
 }
 
 function formatCompactPrice(price?: number): string {
@@ -644,7 +637,7 @@ function updateChartAnnotations(payload: UIPayload) {
     renderTrendlines(deduped, chartCandleCache);
   }
 
-  if (sig) renderEntryLines(sig);
+  if (sig) renderEntryLines(getSelectedTimeframeDisplaySignal(sig));
 }
 
 function updateHealthIndicator() {

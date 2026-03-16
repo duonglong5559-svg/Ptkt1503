@@ -15,6 +15,31 @@ const ATR_BUFFER_MULT = 0.5;
 const RR_MIN = 1.2;
 
 export class SignalEngine {
+  estimateReactionLevels(input: Pick<SignalEngineInput, "currentPrice" | "atr" | "pivotRelation" | "trendlineOutput" | "nearestSupport" | "nearestResistance">): {
+    support?: number;
+    resistance?: number;
+    entryLong?: number;
+    entryShort?: number;
+  } {
+    const support = input.trendlineOutput.primarySupport && !input.trendlineOutput.primarySupport.isBroken
+      ? input.trendlineOutput.primarySupport.projectedPriceNow
+      : input.nearestSupport ?? input.pivotRelation.nearestSupport;
+    const resistance = input.trendlineOutput.primaryResistance && !input.trendlineOutput.primaryResistance.isBroken
+      ? input.trendlineOutput.primaryResistance.projectedPriceNow
+      : input.nearestResistance ?? input.pivotRelation.nearestResistance;
+
+    const entryLong = this.computeEntryLong({
+      ...input,
+      nearestSupport: support,
+    });
+    const entryShort = this.computeEntryShort({
+      ...input,
+      nearestResistance: resistance,
+    });
+
+    return { support, resistance, entryLong, entryShort };
+  }
+
   evaluate(input: SignalEngineInput): TradingSignal {
     const {
       symbol,
