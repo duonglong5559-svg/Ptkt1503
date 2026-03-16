@@ -424,8 +424,8 @@ export class SignalEngine {
       if (rr >= 2) score += 18;
       else if (rr >= 1.5) score += 12;
       else if (rr >= RR_MIN) score += 6;
-      else if (rr >= 1) score -= 8;
-      else score -= 18;
+      else if (rr >= 1) score -= 14;
+      else score -= 28;
     } else {
       score -= 12;
     }
@@ -463,6 +463,11 @@ export class SignalEngine {
 
     if (state === "ready_long" || state === "ready_short") score += 4;
     if (state === "triggered_long" || state === "triggered_short") score += 6;
+
+    if (rr !== undefined) {
+      if (rr < 1) score = Math.min(score, 42);
+      else if (rr < RR_MIN) score = Math.min(score, 55);
+    }
 
     return Math.max(5, Math.min(99, Math.round(score)));
   }
