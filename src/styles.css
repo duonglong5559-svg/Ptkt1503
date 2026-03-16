@@ -36,16 +36,16 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 .bar-fill.short-fill{background:linear-gradient(90deg,var(--red2),var(--red))}
 
 /* TIMEFRAME ROW */
-#tf-row{display:flex;gap:4px;padding:5px 8px;overflow-x:auto;flex-shrink:0;scrollbar-width:none}
+#tf-row{display:flex;gap:5px;padding:6px 8px;overflow-x:auto;flex-shrink:0;scrollbar-width:none}
 #tf-row::-webkit-scrollbar{display:none}
-.tf-card{min-width:52px;padding:5px 6px;border-radius:var(--radius);text-align:center;cursor:pointer;border:1px solid var(--border);background:var(--bg3);flex-shrink:0;transition:all .2s}
-.tf-card.active{border-color:var(--gold);box-shadow:0 0 8px rgba(255,215,0,.25)}
-.tf-card.bullish{background:linear-gradient(180deg,rgba(0,230,118,.12),var(--bg3))}
-.tf-card.bearish{background:linear-gradient(180deg,rgba(255,23,68,.12),var(--bg3))}
-.tf-label{font-size:10px;font-weight:700;color:var(--text2);display:block}
-.tf-price{font-size:10px;font-weight:600;color:var(--text);display:block;margin-top:1px}
-.tf-card.bullish .tf-price{color:var(--green)}
-.tf-card.bearish .tf-price{color:var(--red)}
+.tf-card{min-width:58px;padding:6px 6px 5px;border-radius:10px;text-align:center;cursor:pointer;border:1px solid rgba(86,112,146,.35);background:linear-gradient(180deg,rgba(20,28,41,.98),rgba(15,22,34,.95));flex-shrink:0;transition:all .2s;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+.tf-card.active{border-color:var(--gold);box-shadow:0 0 0 1px rgba(255,215,0,.16),0 0 10px rgba(255,215,0,.12)}
+.tf-card.bullish{border-color:rgba(55,173,119,.42)}
+.tf-card.bearish{border-color:rgba(207,80,107,.42)}
+.tf-top-value{font-size:11px;font-weight:800;color:#7ff2c3;display:block;line-height:1.05}
+.tf-label{font-size:10px;font-weight:800;color:#8fa3c0;display:block;line-height:1.1;margin-top:4px}
+.tf-bottom-value{font-size:10px;font-weight:700;color:#ff728f;display:block;line-height:1.05;margin-top:4px}
+.tf-card.active .tf-label{color:#f0d76a}
 
 /* MARQUEE */
 #marquee{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;white-space:nowrap;flex-shrink:0;padding:4px 0}
@@ -73,18 +73,18 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 #current-price-tag{background:var(--bg4);border:1px solid var(--border);padding:3px 8px;border-radius:4px;font-size:12px;font-weight:700;color:var(--gold)}
 
 /* TABS */
-#tabs{display:flex;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg2)}
-.tab{flex:1;padding:8px 4px;background:transparent;border:none;color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;border-bottom:2px solid transparent;transition:all .2s}
-.tab.active{color:var(--text);border-bottom-color:var(--green)}
-.tab-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+#tabs{display:flex;gap:8px;padding:8px 8px 0;border-top:1px solid rgba(255,255,255,.06);flex-shrink:0;background:linear-gradient(180deg,#0d131f,#101725)}
+.tab{flex:1;padding:10px 8px 11px;background:#121a28;border:1px solid rgba(82,99,128,.22);border-bottom:none;border-top-left-radius:12px;border-top-right-radius:12px;color:#7888a2;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .2s}
+.tab.active{color:#dfe8f8;background:#171f2e;box-shadow:inset 0 -2px 0 0 var(--green)}
+.tab-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .dot-live{background:var(--green);animation:pulse-dot 1.5s infinite}
-.dot-analysis{background:var(--blue)}
+.dot-analysis{background:#f2ca3d}
 .dot-trendline{background:var(--gold)}
 @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
 
 /* TAB CONTENT */
-#tab-content{flex-shrink:0;max-height:240px;overflow-y:auto;background:var(--bg);scrollbar-width:thin;scrollbar-color:var(--bg4) transparent}
-.panel{display:none;padding:8px}
+#tab-content{flex-shrink:0;max-height:240px;overflow-y:auto;background:#0d131f;scrollbar-width:thin;scrollbar-color:var(--bg4) transparent;border-top:1px solid rgba(255,255,255,.04)}
+.panel{display:none;padding:10px 8px 8px}
 .panel.active{display:block}
 
 /* SIGNAL STEPS */
@@ -140,18 +140,27 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 #confidence-value{font-size:20px;font-weight:900;color:var(--green)}
 
 /* NEWS */
-#news-filters{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto;scrollbar-width:none}
+#news-filters{display:flex;gap:6px;padding-bottom:10px;overflow-x:auto;scrollbar-width:none}
 #news-filters::-webkit-scrollbar{display:none}
-.news-filter{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;white-space:nowrap;flex-shrink:0}
-.news-filter.active{background:var(--green-dim);color:var(--green);border-color:var(--green)}
-.news-card{padding:10px;margin-bottom:8px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2)}
-.news-source{font-size:10px;color:var(--text3);margin-bottom:4px}
-.news-title{font-size:12px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:4px}
-.news-desc{font-size:11px;color:var(--text2);line-height:1.3;margin-bottom:6px}
-.news-sentiment{padding:8px;border-radius:6px;font-size:11px;line-height:1.4}
-.news-sentiment.negative{background:rgba(255,23,68,.12);border:1px solid rgba(255,23,68,.3);color:var(--red)}
-.news-sentiment.positive{background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.3);color:var(--green)}
-.news-sentiment.neutral{background:rgba(158,158,158,.12);border:1px solid rgba(158,158,158,.3);color:var(--text2)}
+.news-filter{display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid rgba(87,108,142,.28);background:#141c2a;color:#9db0ca;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.news-filter em{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:#b7364f;color:#fff;font-style:normal;font-size:10px;font-weight:800}
+.news-filter.active{background:#f2ca3d;color:#151008;border-color:#f2ca3d}
+.news-filter.active em{background:#bf374f;color:#fff}
+.news-card{padding:12px;margin-bottom:10px;border-radius:14px;border:1px solid rgba(220,180,54,.22);background:linear-gradient(180deg,#15140f,#101114);box-shadow:0 0 0 1px rgba(255,215,0,.04) inset}
+.news-card-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.news-source-wrap{display:flex;align-items:center;gap:8px;min-width:0}
+.news-asset-tag{display:inline-flex;align-items:center;justify-content:center;padding:3px 7px;border-radius:6px;background:#3a2f07;color:#f2ca3d;font-size:10px;font-weight:900}
+.news-source{font-size:11px;color:#d7c27a;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.news-time{font-size:10px;color:#8e8b78;flex-shrink:0}
+.news-title{font-size:13px;font-weight:700;color:#f0f3f8;line-height:1.45;margin-bottom:6px}
+.news-desc{font-size:11px;color:#a8adba;line-height:1.45;margin-bottom:8px}
+.news-link{display:inline-flex;align-items:center;gap:4px;color:#5da7ff;font-size:12px;font-weight:700;text-decoration:none;margin-bottom:8px}
+.news-sentiment{display:flex;flex-direction:column;gap:3px;padding:9px 10px;border-radius:10px;font-size:11px;line-height:1.4}
+.news-sentiment strong{font-size:11px}
+.news-sentiment span{color:inherit;opacity:.95}
+.news-sentiment.negative{background:rgba(255,23,68,.12);border:1px solid rgba(255,23,68,.3);color:#ff829a}
+.news-sentiment.positive{background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.3);color:#6ff2bb}
+.news-sentiment.neutral{background:rgba(242,202,61,.10);border:1px solid rgba(242,202,61,.22);color:#e8d788}
 
 /* TRENDLINE LIST */
 .tl-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;margin-bottom:4px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2)}

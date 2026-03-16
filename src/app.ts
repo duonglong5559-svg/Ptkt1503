@@ -33,6 +33,7 @@ let lastPayload: UIPayload | null = null;
 let currentPrice = 0;
 let chartCandleCache: Candle[] = [];
 let lastLiveAnalysisAt = 0;
+let currentNewsFilter: "all" | "BTC" | "ETH" | "PAXG" = "all";
 
 type TrendlineListItem = {
   timeframe: string;
@@ -464,11 +465,20 @@ function updateTimeframeCards(payload: UIPayload) {
     if (d) {
       const bias = d.bias || "neutral";
       card.className = `tf-card${tf === selectedTf ? " active" : ""}${bias === "bullish" ? " bullish" : bias === "bearish" ? " bearish" : ""}`;
-      const dominant = d.long >= d.short ? `L${d.long}` : `S${d.short}`;
-      card.innerHTML = `<span class="tf-label">${tf.toUpperCase()}</span><span class="tf-price">${dominant}%</span>`;
+      const topValue = `${Math.max(d.long, d.short)}%`;
+      const bottomValue = `${Math.min(d.long, d.short)}%`;
+      card.innerHTML = `
+        <span class="tf-top-value">${topValue}</span>
+        <span class="tf-label">${tf.toUpperCase()}</span>
+        <span class="tf-bottom-value">${bottomValue}</span>
+      `;
     } else {
       card.className = `tf-card${tf === selectedTf ? " active" : ""}`;
-      card.innerHTML = `<span class="tf-label">${tf.toUpperCase()}</span><span class="tf-price" style="color:var(--text3)">---</span>`;
+      card.innerHTML = `
+        <span class="tf-top-value">---</span>
+        <span class="tf-label">${tf.toUpperCase()}</span>
+        <span class="tf-bottom-value">---</span>
+      `;
     }
     card.onclick = () => switchTimeframe(tf);
     row.appendChild(card);
@@ -974,18 +984,44 @@ function updateHealthIndicator() {
 
 // ── News ────────────────────────────────────────────────────
 let newsLoaded = false;
+function getNewsAssetLabel(asset: "all" | "BTC" | "ETH" | "PAXG"): string {
+  if (asset === "all") return "Tất cả";
+  if (asset === "BTC") return "Bitcoin";
+  if (asset === "ETH") return "Ethereum";
+  return "Vàng/PAXG";
+}
+
+function getVisibleNews(): import("./types").NewsItem[] {
+  const news = lastPayload?.news || newsService?.getCachedNews() || [];
+  if (currentNewsFilter === "all") return news;
+  return news.filter((item) => item.asset === currentNewsFilter);
+}
+
 function loadNewsIfNeeded() {
   if (newsLoaded) return;
   newsLoaded = true;
+  currentNewsFilter = "all";
   const f = document.getElementById("news-filters")!;
-  f.innerHTML = ["Tất cả","Bitcoin","Ethereum","Vàng/PAXG"].map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}">${c}</button>`).join("");
-  f.onclick = (e) => { const b = (e.target as HTMLElement).closest(".news-filter"); if (!b) return; f.querySelectorAll(".news-filter").forEach(x => x.classList.remove("active")); b.classList.add("active"); };
+  const allNews = lastPayload?.news || newsService?.getCachedNews() || [];
+  const filters: Array<"all" | "BTC" | "ETH" | "PAXG"> = ["all", "BTC", "ETH", "PAXG"];
+  f.innerHTML = filters.map((asset, i) => {
+    const count = asset === "all" ? allNews.length : allNews.filter((item) => item.asset === asset).length;
+    return `<button class="news-filter${i === 0 ? " active" : ""}" data-asset="${asset}"><span>${getNewsAssetLabel(asset)}</span><em>${count}</em></button>`;
+  }).join("");
+  f.onclick = (e) => {
+    const b = (e.target as HTMLElement).closest(".news-filter") as HTMLElement | null;
+    if (!b) return;
+    currentNewsFilter = (b.dataset.asset as "all" | "BTC" | "ETH" | "PAXG") || "all";
+    f.querySelectorAll(".news-filter").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    renderNewsFromPayload();
+  };
   renderNewsFromPayload();
 }
 
 function renderNewsFromPayload() {
   const l = document.getElementById("news-list")!;
-  const news = lastPayload?.news || newsService?.getCachedNews() || [];
+  const news = getVisibleNews();
   if (!news.length) {
     l.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Không có tin tức</div>';
     return;
@@ -995,8 +1031,26 @@ function renderNewsFromPayload() {
     const lb = n.sentiment === "negative" ? "Tiêu cực" : n.sentiment === "positive" ? "Tích cực" : "Trung tính";
     const desc = n.sentiment === "negative" ? "Có thể gây áp lực giảm giá." : n.sentiment === "positive" ? "Có thể hỗ trợ đà tăng." : "Tác động không rõ ràng.";
     const time = new Date(n.publishedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
-    const impactBadge = n.impact === "high" ? " 🔴" : n.impact === "medium" ? " 🟡" : "";
-    return `<div class="news-card"><div class="news-source">${n.source} · ${time}${impactBadge}</div><div class="news-title">${n.title}</div><div class="news-sentiment ${cls}"><strong>Cảm xúc: ${lb} (${n.confidence}%)</strong> - ${desc}</div></div>`;
+    const impactBadge = n.impact === "high" ? "Cao" : n.impact === "medium" ? "Vừa" : "Thấp";
+    const assetTag = n.asset === "general" ? "NEWS" : n.asset;
+    return `
+      <div class="news-card">
+        <div class="news-card-header">
+          <div class="news-source-wrap">
+            <span class="news-asset-tag">${assetTag}</span>
+            <span class="news-source">${n.source}</span>
+          </div>
+          <div class="news-time">${time}</div>
+        </div>
+        <div class="news-title">${n.title}</div>
+        <div class="news-desc">${n.summary || "Không có mô tả chi tiết."}</div>
+        <a class="news-link" href="https://www.google.com/search?q=${encodeURIComponent(n.title)}" target="_blank" rel="noreferrer">Xem thêm</a>
+        <div class="news-sentiment ${cls}">
+          <strong>${lb} (${n.confidence}%)</strong>
+          <span>${desc} · Impact ${impactBadge}</span>
+        </div>
+      </div>
+    `;
   }).join("");
 }
 
