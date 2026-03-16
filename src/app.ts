@@ -268,15 +268,39 @@ function renderEntryLines(signal: TradingSignal) {
   }
 }
 
-function getTrendlineStyle(tl: Trendline): { color: string; width: number } {
-  const isSup = tl.type.includes("support");
-  const vs = tl.visualState;
+function getTrendlineColor(tl: Trendline, alpha = 1): string {
+  const strengthRatio = Math.max(0, Math.min(1, tl.strength / 100));
+  const glowBoost = Math.round(strengthRatio * 80);
+  const isSupport = tl.type.includes("support");
 
-  if (vs === "hot") return { color: isSup ? "rgba(0,255,200,0.95)" : "rgba(255,50,100,0.95)", width: 3 };
-  if (vs === "near") return { color: isSup ? "rgba(0,200,160,0.75)" : "rgba(220,80,120,0.75)", width: 2 };
-  if (vs === "break") return { color: isSup ? "rgba(255,120,50,0.85)" : "rgba(50,200,180,0.85)", width: 2 };
-  if (vs === "retest") return { color: isSup ? "rgba(0,220,180,0.8)" : "rgba(220,60,100,0.8)", width: 2 };
-  return { color: "rgba(150,150,150,0.4)", width: 1 };
+  if (tl.visualState === "break") {
+    return isSupport
+      ? `rgba(255, ${120 + glowBoost}, 40, ${alpha})`
+      : `rgba(${40 + glowBoost}, 220, 255, ${alpha})`;
+  }
+
+  if (tl.visualState === "retest") {
+    return isSupport
+      ? `rgba(255, ${170 + Math.round(glowBoost * 0.4)}, 120, ${alpha})`
+      : `rgba(120, 255, ${170 + Math.round(glowBoost * 0.4)}, ${alpha})`;
+  }
+
+  if (isSupport) {
+    if (tl.visualState === "hot") return `rgba(0, 255, ${170 + Math.round(glowBoost * 0.5)}, ${alpha})`;
+    if (tl.visualState === "near") return `rgba(0, ${200 + Math.round(glowBoost * 0.4)}, 255, ${alpha})`;
+    return `rgba(90, 180, ${200 + Math.round(glowBoost * 0.3)}, ${Math.max(0.35, alpha * 0.7)})`;
+  }
+
+  if (tl.visualState === "hot") return `rgba(255, 60, ${120 + Math.round(glowBoost * 0.5)}, ${alpha})`;
+  if (tl.visualState === "near") return `rgba(255, ${110 + Math.round(glowBoost * 0.4)}, 60, ${alpha})`;
+  return `rgba(${190 + Math.round(glowBoost * 0.3)}, 110, 190, ${Math.max(0.35, alpha * 0.7)})`;
+}
+
+function getTrendlineStyle(tl: Trendline): { color: string; width: number } {
+  if (tl.visualState === "hot") return { color: getTrendlineColor(tl, 0.98), width: 3 };
+  if (tl.visualState === "near") return { color: getTrendlineColor(tl, 0.86), width: 2 };
+  if (tl.visualState === "break" || tl.visualState === "retest") return { color: getTrendlineColor(tl, 0.9), width: 2 };
+  return { color: getTrendlineColor(tl, 0.55), width: 1 };
 }
 
 function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
@@ -523,7 +547,7 @@ function updateTrendlineTab(payload: UIPayload) {
     const proxLabels: Record<string, string> = { far: "", near: "gần", approaching: "tiến gần", touch_zone: "chạm", reaction_zone: "phản ứng" };
     const proxLabel = proxLabels[t.proximity] || "";
     const interLabel = t.lastInteraction !== "none" ? t.lastInteraction : "";
-    const visualColor = t.visualState === "hot" ? "var(--cyan)" : t.visualState === "near" ? "var(--green)" : t.visualState === "break" ? "var(--red)" : "var(--text2)";
+    const visualColor = getTrendlineColor(t);
     return `<div class="tl-item"><div><div class="tl-type ${isSup ? "support" : "resistance"}" style="color:${visualColor}">${typeLabel} ~${t.projectedPriceNow.toFixed(2)}</div><div class="tl-info">Touch:${t.touches} ${proxLabel} ${interLabel} ND:${t.normalizedDistance.toFixed(1)}</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
   }).join("");
 }
