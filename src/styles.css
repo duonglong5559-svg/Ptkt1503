@@ -62,6 +62,18 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 .signal-overlay-chip.short{border-color:rgba(255,23,68,.32);color:var(--red)}
 .signal-overlay-chip.neutral{border-color:rgba(0,188,212,.32);color:var(--cyan)}
 .signal-overlay-chip strong{font-size:11px;color:var(--text)}
+#chart-callouts{position:absolute;inset:0;z-index:5;pointer-events:none}
+.chart-callout{position:absolute;right:56px;display:flex;align-items:center;gap:8px;max-width:min(58vw,240px);padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:rgba(17,24,39,.94);box-shadow:0 4px 16px rgba(0,0,0,.22)}
+.chart-callout span{display:block;font-size:10px;font-weight:700;line-height:1.25}
+.chart-callout strong{display:block;font-size:11px;font-weight:900;color:var(--text)}
+.chart-callout.long{border-color:rgba(0,230,118,.36);background:rgba(7,34,25,.95)}
+.chart-callout.long span{color:var(--green)}
+.chart-callout.short{border-color:rgba(255,23,68,.36);background:rgba(49,13,20,.95)}
+.chart-callout.short span{color:#ff8799}
+.chart-callout.target{border-color:rgba(255,215,0,.32);background:rgba(54,45,7,.94)}
+.chart-callout.target span{color:var(--gold)}
+.chart-callout.plan{border-color:rgba(0,188,212,.32);background:rgba(9,34,41,.94)}
+.chart-callout.plan span{color:var(--cyan)}
 #price-overlay{position:absolute;top:8px;right:8px;z-index:5;pointer-events:none}
 #current-price-tag{background:var(--bg4);border:1px solid var(--border);padding:3px 8px;border-radius:4px;font-size:12px;font-weight:700;color:var(--gold)}
 
@@ -96,12 +108,16 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 /* SIGNAL SNAPSHOT */
 #signal-snapshot{display:grid;gap:8px;margin-top:8px}
 .signal-summary-card{padding:12px;border-radius:var(--radius);border:1px solid rgba(0,188,212,.22);background:linear-gradient(135deg,var(--bg3),var(--bg2));box-shadow:0 0 0 1px rgba(0,188,212,.06) inset}
-.signal-card{padding:12px;border-radius:var(--radius);border:1px solid var(--border);background:linear-gradient(135deg,var(--bg3),var(--bg2))}
+.signal-card{position:relative;padding:12px;border-radius:var(--radius);border:1px solid var(--border);background:linear-gradient(135deg,var(--bg3),var(--bg2));overflow:hidden}
+.signal-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:rgba(255,255,255,.08)}
 .signal-card.long{border-color:rgba(0,230,118,.28);box-shadow:0 0 0 1px rgba(0,230,118,.08) inset}
 .signal-card.short{border-color:rgba(255,23,68,.28);box-shadow:0 0 0 1px rgba(255,23,68,.08) inset}
 .signal-card.neutral{border-color:rgba(0,188,212,.25);box-shadow:0 0 0 1px rgba(0,188,212,.08) inset}
+.signal-card.long::before{background:linear-gradient(180deg,rgba(0,230,118,.2),rgba(0,230,118,.75))}
+.signal-card.short::before{background:linear-gradient(180deg,rgba(255,23,68,.2),rgba(255,23,68,.75))}
+.signal-card.neutral::before{background:linear-gradient(180deg,rgba(0,188,212,.2),rgba(0,188,212,.75))}
 .signal-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-.signal-card-title{font-size:14px;font-weight:900;color:var(--text);text-transform:uppercase}
+.signal-card-title{font-size:14px;font-weight:900;color:var(--text);text-transform:uppercase;letter-spacing:.3px}
 .signal-card-subtitle{font-size:11px;color:var(--text2);margin-top:3px;line-height:1.45}
 .signal-card-tags{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
 .signal-tag{padding:3px 8px;border-radius:999px;border:1px solid var(--border);font-size:10px;font-weight:700}
@@ -168,5 +184,6 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 @media(max-width:400px){
   .app-title{max-width:120px;font-size:11px}
   .tf-card{min-width:46px;padding:4px}
+  .chart-callout{right:48px;max-width:64vw;padding:5px 8px}
   .signal-grid{grid-template-columns:1fr}
 }

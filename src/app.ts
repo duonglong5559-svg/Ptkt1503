@@ -54,6 +54,13 @@ type SetupCardModel = {
   stopLoss?: number;
 };
 
+type ChartCalloutModel = {
+  tone: "long" | "short" | "target" | "plan";
+  label: string;
+  price: number;
+  top: number;
+};
+
 // ── Bootstrap ───────────────────────────────────────────────
 async function init() {
   log("App starting");
@@ -215,7 +222,10 @@ function setupChart() {
   new ResizeObserver((entries) => {
     if (!chart) return;
     const { width, height } = entries[0].contentRect;
-    if (width > 0 && height > 0) chart.resize(width, height);
+    if (width > 0 && height > 0) {
+      chart.resize(width, height);
+      if (lastPayload) updateChartCallouts(lastPayload);
+    }
   }).observe(container);
 }
 
@@ -489,11 +499,38 @@ function formatAtrDistance(price: number | undefined, referencePrice: number, at
   return `Cách giá ${atrDistance.toFixed(1)} ATR`;
 }
 
+function describeZoneDistance(
+  tone: "long" | "short",
+  price: number | undefined,
+  currentMarketPrice: number,
+  atr?: number
+): string {
+  if (!price || !currentMarketPrice || !atr || atr <= 0) return "Chờ dữ liệu vùng giá.";
+  const atrDistance = Math.abs(currentMarketPrice - price) / atr;
+  const area = tone === "long" ? "hỗ trợ" : "kháng cự";
+  if (atrDistance <= 0.6) return `Giá đang rất gần ${area} (${atrDistance.toFixed(1)} ATR).`;
+  if (atrDistance <= 1.3) return `Giá đang tiến gần ${area} (${atrDistance.toFixed(1)} ATR).`;
+  return `Giá còn xa ${area} (${atrDistance.toFixed(1)} ATR).`;
+}
+
 function getConfidenceText(confidence: number): string {
   if (confidence >= 82) return "Rất mạnh";
   if (confidence >= 70) return "Mạnh";
   if (confidence >= 58) return "Khá tốt";
   return "Theo dõi";
+}
+
+function computeRiskRewardText(
+  tone: "long" | "short",
+  entry: number | undefined,
+  stopLoss: number | undefined,
+  target: number | undefined
+): string {
+  if (!entry || !stopLoss || !target) return "RR chưa rõ";
+  const risk = Math.abs(entry - stopLoss);
+  const reward = Math.abs(target - entry);
+  if (risk <= 0) return "RR chưa rõ";
+  return `RR 1:${(reward / risk).toFixed(1)}`;
 }
 
 function computeProjectedTargets(
@@ -580,7 +617,7 @@ function buildSetupCardModels(payload: UIPayload): SetupCardModel[] {
       anchorPrice: longAnchor,
       confidence: signal.confidenceLong,
       confidenceText: getConfidenceText(signal.confidenceLong),
-      subtitle: formatAtrDistance(longAnchor, payload.currentPrice, atr),
+      subtitle: describeZoneDistance("long", longAnchor, payload.currentPrice, atr),
       tags: [selectedTf.toUpperCase(), signal.state.includes("long") ? "AUTO" : "PLAN"],
       entry: signal.entryLong || longAnchor,
       scalp: longTargets.scalp,
@@ -596,7 +633,7 @@ function buildSetupCardModels(payload: UIPayload): SetupCardModel[] {
       anchorPrice: shortAnchor,
       confidence: signal.confidenceShort,
       confidenceText: getConfidenceText(signal.confidenceShort),
-      subtitle: formatAtrDistance(shortAnchor, payload.currentPrice, atr),
+      subtitle: describeZoneDistance("short", shortAnchor, payload.currentPrice, atr),
       tags: [selectedTf.toUpperCase(), signal.state.includes("short") ? "AUTO" : "PLAN"],
       entry: signal.entryShort || shortAnchor,
       scalp: shortTargets.scalp,
@@ -609,6 +646,7 @@ function buildSetupCardModels(payload: UIPayload): SetupCardModel[] {
 }
 
 function renderSetupCard(card: SetupCardModel): string {
+  const rrText = computeRiskRewardText(card.tone, card.entry, card.stopLoss, card.swing || card.scalp);
   return `
     <div class="signal-card ${card.tone}">
       <div class="signal-card-header">
@@ -620,7 +658,7 @@ function renderSetupCard(card: SetupCardModel): string {
           ${card.tags.map((tag, index) => `<span class="signal-tag ${index === card.tags.length - 1 ? card.tone : "neutral"}">${tag}</span>`).join("")}
         </div>
       </div>
-      <div class="signal-card-strength ${card.tone}">${card.confidenceText} · ${card.confidence}% tin cậy</div>
+      <div class="signal-card-strength ${card.tone}">${card.confidenceText} · ${card.confidence}% tin cậy · ${rrText}</div>
       <div class="signal-grid">
         <div class="signal-metric active ${card.tone}">
           <span>Entry</span>
@@ -664,6 +702,81 @@ function updateSignalOverlay(payload: UIPayload) {
 
   el.innerHTML = chips
     .map((chip) => `<div class="signal-overlay-chip ${chip.tone}">${chip.label}: <strong>${chip.value}</strong></div>`)
+    .join("");
+}
+
+function positionChartCallouts(callouts: ChartCalloutModel[], height: number): ChartCalloutModel[] {
+  const minGap = 38;
+  const minTop = 42;
+  const maxTop = Math.max(minTop, height - 34);
+  const sorted = [...callouts].sort((a, b) => a.top - b.top);
+
+  for (const callout of sorted) {
+    callout.top = Math.max(minTop, Math.min(callout.top, maxTop));
+  }
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].top - sorted[i - 1].top < minGap) {
+      sorted[i].top = sorted[i - 1].top + minGap;
+    }
+  }
+
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (sorted[i].top > maxTop) {
+      const overflow = sorted[i].top - maxTop;
+      for (let j = 0; j <= i; j++) {
+        sorted[j].top -= overflow;
+      }
+    }
+    if (i < sorted.length - 1 && sorted[i + 1].top - sorted[i].top < minGap) {
+      sorted[i].top = sorted[i + 1].top - minGap;
+    }
+  }
+
+  for (const callout of sorted) {
+    callout.top = Math.max(minTop, Math.min(callout.top, maxTop));
+  }
+
+  return sorted;
+}
+
+function updateChartCallouts(payload: UIPayload) {
+  const el = document.getElementById("chart-callouts");
+  const area = document.getElementById("chart-area");
+  if (!el || !area || !candleSeries) return;
+
+  const tf = getSelectedTimeframeResult();
+  const targetPrice = payload.signal.target ?? payload.signal.takeProfit;
+  const rawCallouts = [
+    targetPrice ? { tone: "target" as const, label: "Gia thi truong se huong toi", price: targetPrice } : null,
+    payload.signal.entryShort ? { tone: "short" as const, label: "Dat lenh cho tu dong Short", price: payload.signal.entryShort } : null,
+    payload.signal.entryLong ? { tone: "long" as const, label: "Dat lenh cho tu dong Long", price: payload.signal.entryLong } : null,
+    tf?.pivotRelation.levels.pivot ? { tone: "plan" as const, label: "Vung Pivot can quan sat", price: tf.pivotRelation.levels.pivot } : null,
+  ].filter((item): item is { tone: "long" | "short" | "target" | "plan"; label: string; price: number } => item !== null);
+
+  const projected: ChartCalloutModel[] = [];
+  for (const item of rawCallouts) {
+    const coordinate = candleSeries.priceToCoordinate(item.price);
+    if (coordinate === null) continue;
+    projected.push({
+      ...item,
+      top: coordinate - 14,
+    });
+  }
+
+  if (projected.length === 0) {
+    el.innerHTML = "";
+    return;
+  }
+
+  const positioned = positionChartCallouts(projected, area.clientHeight || 260);
+  el.innerHTML = positioned
+    .map((item) => `
+      <div class="chart-callout ${item.tone}" style="top:${item.top.toFixed(0)}px">
+        <span>${item.label}</span>
+        <strong>${formatSignalPrice(item.price)}</strong>
+      </div>
+    `)
     .join("");
 }
 
@@ -827,6 +940,7 @@ function updateChartAnnotations(payload: UIPayload) {
   }
 
   if (sig) renderEntryLines(sig);
+  updateChartCallouts(payload);
 }
 
 function updateHealthIndicator() {
