@@ -2,6 +2,7 @@ import { SignalEngine } from "../src/engines/SignalEngine";
 import { AssertFn } from "./helpers";
 import {
   PivotRelation,
+  Trendline,
   TrendlineEngineOutput,
   TimeframeScore,
 } from "../src/types";
@@ -35,7 +36,7 @@ function makeTL(overrides: Partial<TrendlineEngineOutput> = {}): TrendlineEngine
   };
 }
 
-function makeLine(overrides: Record<string, any> = {}) {
+function makeLine(overrides: Partial<Trendline> = {}): Trendline {
   return {
     id: "tl-1",
     type: "ascending_support",
