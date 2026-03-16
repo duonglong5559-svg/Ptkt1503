@@ -85,8 +85,8 @@ export function testPivotEngine(assert: AssertFn) {
       close: 5150,
       currentPrice: 5120,
     });
-    assert(result.nearestSupport < 5120, "Nearest support is below current price");
-    assert(result.nearestResistance > 5120, "Nearest resistance is above current price");
+    assert(result.nearestSupport !== undefined && result.nearestSupport < 5120, "Nearest support is below current price");
+    assert(result.nearestResistance !== undefined && result.nearestResistance > 5120, "Nearest resistance is above current price");
   }
 
   // Test: no resistance above highest pivot level
