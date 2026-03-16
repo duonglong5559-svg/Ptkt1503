@@ -24,6 +24,16 @@ type MarketRegime =
   | "no_trade";
 
 type TradeQualityLabel = "poor" | "fair" | "good" | "excellent";
+type TimeframeConfirmationProfile = {
+  direction: "bullish" | "bearish";
+  microAligned: boolean;
+  midAligned: boolean;
+  macroAligned: boolean;
+  alignedCount: number;
+  opposingCount: number;
+  score: number;
+  conflict: boolean;
+};
 
 export class SignalEngine {
   evaluate(input: SignalEngineInput): TradingSignal {
@@ -147,6 +157,8 @@ export class SignalEngine {
     const bigFramesBullish = this.countBigFramesBias(timeframeScores, "bullish");
     const totalBigFrames = this.countBigFramesAvailable(timeframeScores);
     const bigFrameMinRequired = Math.max(1, Math.min(2, Math.floor(totalBigFrames * 0.4)));
+    const longConfirmation = this.buildTimeframeConfirmation(timeframeScores, "bullish");
+    const shortConfirmation = this.buildTimeframeConfirmation(timeframeScores, "bearish");
 
     const pivotBlocksBearish = pivotRelation.state === "above_pivot" && pivotRelation.directionBias === "bullish";
     const pivotBlocksBullish = pivotRelation.state === "below_pivot" && pivotRelation.directionBias === "bearish";
@@ -227,7 +239,9 @@ export class SignalEngine {
       shortContextReady &&
       regimeAllowsShort &&
       emaSupportsShort &&
-      volumeSupportsShort;
+      volumeSupportsShort &&
+      shortConfirmation.score >= 55 &&
+      !shortConfirmation.conflict;
 
     const canWatchLong =
       globalLongPercent >= WATCH_THRESHOLD &&
@@ -236,7 +250,9 @@ export class SignalEngine {
       longContextReady &&
       regimeAllowsLong &&
       emaSupportsLong &&
-      volumeSupportsLong;
+      volumeSupportsLong &&
+      longConfirmation.score >= 55 &&
+      !longConfirmation.conflict;
 
     if (prev && canWatchShort && globalShortPercent >= READY_THRESHOLD) {
       if (prev.state === "ready_short" || prev.state === "triggered_short") {
@@ -345,6 +361,10 @@ export class SignalEngine {
     }
 
     const entry = direction === "long" ? entryLong : entryShort;
+    const confirmation = this.buildTimeframeConfirmation(
+      input.timeframeScores,
+      direction === "long" ? "bullish" : "bearish"
+    );
     const fallbackState: SignalState = direction === "long" ? "watch_long" : "watch_short";
     const hardStates: SignalState[] = direction === "long"
       ? ["ready_long", "triggered_long", "active_long"]
@@ -352,6 +372,10 @@ export class SignalEngine {
 
     if (tradeQualityScore < 40) return "idle";
     if (tradeQualityScore < 58) {
+      return hardStates.includes(state) ? fallbackState : state === fallbackState ? fallbackState : "idle";
+    }
+
+    if (confirmation.conflict || confirmation.score < 55) {
       return hardStates.includes(state) ? fallbackState : state === fallbackState ? fallbackState : "idle";
     }
 
@@ -384,6 +408,10 @@ export class SignalEngine {
     if (direction === "neutral") return 25;
 
     const regime = this.deriveMarketRegime(input);
+    const confirmation = this.buildTimeframeConfirmation(
+      input.timeframeScores,
+      direction === "long" ? "bullish" : "bearish"
+    );
     const entry = direction === "long" ? entryLong : entryShort;
     let score = 40;
 
@@ -401,6 +429,11 @@ export class SignalEngine {
     } else {
       score -= 12;
     }
+
+    score += Math.round((confirmation.score - 50) * 0.35);
+    if (confirmation.conflict) score -= 12;
+    if (confirmation.midAligned) score += 4;
+    if (confirmation.macroAligned) score += 6;
 
     if (input.emaContext?.bullishAligned && direction === "long") score += 8;
     if (input.emaContext?.bearishAligned && direction === "short") score += 8;
@@ -439,6 +472,49 @@ export class SignalEngine {
     if (score >= 68) return "good";
     if (score >= 52) return "fair";
     return "poor";
+  }
+
+  private buildTimeframeConfirmation(
+    scores: TimeframeScore[],
+    direction: "bullish" | "bearish"
+  ): TimeframeConfirmationProfile {
+    const microFrames = ["15m", "1h", "2h"];
+    const midFrames = ["4h", "6h", "8h"];
+    const macroFrames = ["12h", "1d", "1w"];
+
+    const aligned = scores.filter((score) => score.dominantBias === direction);
+    const opposing = scores.filter(
+      (score) => score.dominantBias !== direction && score.dominantBias !== "neutral"
+    );
+
+    const groupAligned = (frames: string[]) =>
+      scores.some((score) => frames.includes(score.timeframe) && score.dominantBias === direction);
+    const groupOpposing = (frames: string[]) =>
+      scores.some((score) => frames.includes(score.timeframe) && score.dominantBias !== direction && score.dominantBias !== "neutral");
+
+    let score = 45;
+    score += aligned.length * 8;
+    score -= opposing.length * 7;
+    if (groupAligned(microFrames)) score += 6;
+    if (groupAligned(midFrames)) score += 10;
+    if (groupAligned(macroFrames)) score += 12;
+
+    const macroConflict = groupOpposing(macroFrames);
+    const midConflict = groupOpposing(midFrames);
+
+    if (midConflict) score -= 10;
+    if (macroConflict) score -= 14;
+
+    return {
+      direction,
+      microAligned: groupAligned(microFrames),
+      midAligned: groupAligned(midFrames),
+      macroAligned: groupAligned(macroFrames),
+      alignedCount: aligned.length,
+      opposingCount: opposing.length,
+      score: Math.max(0, Math.min(100, score)),
+      conflict: macroConflict || (midConflict && !groupAligned(macroFrames)),
+    };
   }
 
   private resolveDirection(
