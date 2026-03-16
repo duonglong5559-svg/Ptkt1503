@@ -13,9 +13,13 @@ const READY_THRESHOLD = 62;
 const COOLDOWN_MS = 5 * 60 * 1000;
 const ATR_BUFFER_MULT = 0.5;
 const RR_MIN = 1.2;
+type ReactionInput = Pick<
+  SignalEngineInput,
+  "currentPrice" | "atr" | "pivotRelation" | "trendlineOutput" | "nearestSupport" | "nearestResistance"
+>;
 
 export class SignalEngine {
-  estimateReactionLevels(input: Pick<SignalEngineInput, "currentPrice" | "atr" | "pivotRelation" | "trendlineOutput" | "nearestSupport" | "nearestResistance">): {
+  estimateReactionLevels(input: ReactionInput): {
     support?: number;
     resistance?: number;
     entryLong?: number;
@@ -247,7 +251,7 @@ export class SignalEngine {
     return scores.filter((s) => bigFrames.includes(s.timeframe)).length;
   }
 
-  private computeEntryLong(input: SignalEngineInput): number | undefined {
+  private computeEntryLong(input: ReactionInput): number | undefined {
     const { currentPrice, nearestSupport, pivotRelation, atr, trendlineOutput } = input;
     const effectiveAtr = atr || currentPrice * 0.005;
 
@@ -272,7 +276,7 @@ export class SignalEngine {
     return Math.round(candidates[0] * 100) / 100;
   }
 
-  private computeEntryShort(input: SignalEngineInput): number | undefined {
+  private computeEntryShort(input: ReactionInput): number | undefined {
     const { currentPrice, nearestResistance, pivotRelation, atr, trendlineOutput } = input;
     const effectiveAtr = atr || currentPrice * 0.005;
 
