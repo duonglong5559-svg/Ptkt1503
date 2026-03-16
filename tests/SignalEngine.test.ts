@@ -38,10 +38,10 @@ function makeTL(overrides: Partial<TrendlineEngineOutput> = {}): TrendlineEngine
 function makeScores(bias: "bullish" | "bearish"): TimeframeScore[] {
   const isB = bias === "bearish";
   return [
-    { symbol: "BTCUSDT", timeframe: "15m", longScore: isB ? 42 : 58, shortScore: isB ? 58 : 42, dominantBias: bias, components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, volatility: 0, sr: 0 }, confidence: 60, summary: [], updatedAt: Date.now() },
-    { symbol: "BTCUSDT", timeframe: "1h", longScore: isB ? 35 : 65, shortScore: isB ? 65 : 35, dominantBias: bias, components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, volatility: 0, sr: 0 }, confidence: 65, summary: [], updatedAt: Date.now() },
-    { symbol: "BTCUSDT", timeframe: "4h", longScore: isB ? 25 : 75, shortScore: isB ? 75 : 25, dominantBias: bias, components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, volatility: 0, sr: 0 }, confidence: 70, summary: [], updatedAt: Date.now() },
-    { symbol: "BTCUSDT", timeframe: "1d", longScore: isB ? 30 : 70, shortScore: isB ? 70 : 30, dominantBias: bias, components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, volatility: 0, sr: 0 }, confidence: 72, summary: [], updatedAt: Date.now() },
+    { symbol: "BTCUSDT", timeframe: "15m", longScore: isB ? 42 : 58, shortScore: isB ? 58 : 42, dominantBias: bias, components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, ema: 0, volume: 0, volatility: 0, sr: 0 }, confidence: 60, summary: [], updatedAt: Date.now() },
+    { symbol: "BTCUSDT", timeframe: "1h", longScore: isB ? 35 : 65, shortScore: isB ? 65 : 35, dominantBias: bias, components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, ema: 0, volume: 0, volatility: 0, sr: 0 }, confidence: 65, summary: [], updatedAt: Date.now() },
+    { symbol: "BTCUSDT", timeframe: "4h", longScore: isB ? 25 : 75, shortScore: isB ? 75 : 25, dominantBias: bias, components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, ema: 0, volume: 0, volatility: 0, sr: 0 }, confidence: 70, summary: [], updatedAt: Date.now() },
+    { symbol: "BTCUSDT", timeframe: "1d", longScore: isB ? 30 : 70, shortScore: isB ? 70 : 30, dominantBias: bias, components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, ema: 0, volume: 0, volatility: 0, sr: 0 }, confidence: 72, summary: [], updatedAt: Date.now() },
   ];
 }
 
@@ -53,7 +53,7 @@ export function testSignalEngine(assert: AssertFn) {
     const result = engine.evaluate({
       symbol: "BTCUSDT",
       timeframeScores: [
-        { symbol: "BTCUSDT", timeframe: "1h", longScore: 52, shortScore: 48, dominantBias: "neutral", components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, volatility: 0, sr: 0 }, confidence: 50, summary: [], updatedAt: Date.now() },
+        { symbol: "BTCUSDT", timeframe: "1h", longScore: 52, shortScore: 48, dominantBias: "neutral", components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, ema: 0, volume: 0, volatility: 0, sr: 0 }, confidence: 50, summary: [], updatedAt: Date.now() },
       ],
       globalLongPercent: 52,
       globalShortPercent: 48,
@@ -205,5 +205,35 @@ export function testSignalEngine(assert: AssertFn) {
       flipped.state === "invalidated" || flipped.direction === "long",
       "Bias flip either invalidates or switches direction"
     );
+  }
+
+  // Test: EMA misalignment blocks bullish watch state
+  {
+    const result = engine.evaluate({
+      symbol: "BTCUSDT",
+      timeframeScores: makeScores("bullish"),
+      globalLongPercent: 69,
+      globalShortPercent: 31,
+      pivotRelation: makePivot({ state: "above_pivot", directionBias: "bullish" }),
+      trendlineOutput: makeTL(),
+      structureState: "uptrend",
+      emaContext: {
+        ema20: 5200,
+        ema50: 5240,
+        ema200: 5300,
+        priceAboveEma20: false,
+        priceAboveEma50: false,
+        bullishAligned: false,
+        bearishAligned: true,
+        ema20Slope: -0.4,
+        ema50Slope: -0.2,
+        ema200Slope: -0.1,
+      },
+      currentPrice: 5180,
+      atr: 15,
+      currentTime: Date.now(),
+    });
+
+    assert(result.state === "idle", "Bearish EMA alignment blocks bullish setup");
   }
 }

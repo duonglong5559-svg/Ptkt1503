@@ -101,6 +101,9 @@ export class SignalEngine {
       trendlineOutput,
       currentPrice,
       atr,
+      structureState,
+      emaContext,
+      volumeContext,
     } = input;
 
     const bigFramesBearish = this.countBigFramesBias(timeframeScores, "bearish");
@@ -110,16 +113,6 @@ export class SignalEngine {
 
     const pivotBlocksBearish = pivotRelation.state === "above_pivot" && pivotRelation.directionBias === "bullish";
     const pivotBlocksBullish = pivotRelation.state === "below_pivot" && pivotRelation.directionBias === "bearish";
-
-    const canWatchShort =
-      globalShortPercent >= WATCH_THRESHOLD &&
-      bigFramesBearish >= bigFrameMinRequired &&
-      !pivotBlocksBearish;
-
-    const canWatchLong =
-      globalLongPercent >= WATCH_THRESHOLD &&
-      bigFramesBullish >= bigFrameMinRequired &&
-      !pivotBlocksBullish;
 
     const hasResistanceNearby = trendlineOutput.activeTrendlines.some(
       (t) => t.type.includes("resistance") && t.normalizedDistance <= 1.2
@@ -139,6 +132,59 @@ export class SignalEngine {
     const hasBrokenSupportBelow = trendlineOutput.activeTrendlines.some(
       (t) => t.type.includes("support") && t.isBroken && t.normalizedDistance <= 2
     );
+
+    const structureSupportsLong =
+      structureState === "uptrend" ||
+      structureState === "breakout" ||
+      structureState === "retest_up";
+    const structureSupportsShort =
+      structureState === "downtrend" ||
+      structureState === "breakdown" ||
+      structureState === "retest_down";
+
+    const emaSupportsLong =
+      !emaContext ||
+      emaContext.bullishAligned ||
+      (emaContext.priceAboveEma20 && emaContext.ema20Slope > 0);
+    const emaSupportsShort =
+      !emaContext ||
+      emaContext.bearishAligned ||
+      (!emaContext.priceAboveEma20 && emaContext.ema20Slope < 0);
+
+    const volumeSupportsLong =
+      !volumeContext ||
+      volumeContext.relativeVolume >= 0.85 ||
+      volumeContext.bullVolumeRatio >= 0.52;
+    const volumeSupportsShort =
+      !volumeContext ||
+      volumeContext.relativeVolume >= 0.85 ||
+      volumeContext.bearVolumeRatio >= 0.52;
+
+    const breakoutVolumeSupportsLong =
+      !volumeContext ||
+      (volumeContext.breakoutConfirmed && volumeContext.bullVolumeRatio >= volumeContext.bearVolumeRatio);
+    const breakoutVolumeSupportsShort =
+      !volumeContext ||
+      (volumeContext.breakoutConfirmed && volumeContext.bearVolumeRatio >= volumeContext.bullVolumeRatio);
+
+    const longContextReady = structureSupportsLong || hasSupportNearby || supportInTouchZone;
+    const shortContextReady = structureSupportsShort || hasResistanceNearby || resistanceInTouchZone;
+
+    const canWatchShort =
+      globalShortPercent >= WATCH_THRESHOLD &&
+      bigFramesBearish >= bigFrameMinRequired &&
+      !pivotBlocksBearish &&
+      shortContextReady &&
+      emaSupportsShort &&
+      volumeSupportsShort;
+
+    const canWatchLong =
+      globalLongPercent >= WATCH_THRESHOLD &&
+      bigFramesBullish >= bigFrameMinRequired &&
+      !pivotBlocksBullish &&
+      longContextReady &&
+      emaSupportsLong &&
+      volumeSupportsLong;
 
     if (prev && canWatchShort && globalShortPercent >= READY_THRESHOLD) {
       if (prev.state === "ready_short" || prev.state === "triggered_short") {
@@ -170,13 +216,14 @@ export class SignalEngine {
 
     if (canWatchShort && globalShortPercent >= READY_THRESHOLD) {
       if (resistanceInTouchZone) return "ready_short";
-      if (hasBrokenSupportBelow && globalShortPercent >= 65) return "ready_short";
+      if (hasBrokenSupportBelow && globalShortPercent >= 65 && breakoutVolumeSupportsShort) return "ready_short";
       if (hasResistanceNearby) return "watch_short";
       return "watch_short";
     }
 
     if (canWatchLong && globalLongPercent >= READY_THRESHOLD) {
       if (supportInTouchZone) return "ready_long";
+      if (structureState === "breakout" && breakoutVolumeSupportsLong) return "ready_long";
       if (hasSupportNearby) return "watch_long";
       return "watch_long";
     }
@@ -639,7 +686,7 @@ export class SignalEngine {
   ): number {
     if (state === "idle" || state === "invalidated" || direction === "neutral") return 30;
 
-    const { globalLongPercent, globalShortPercent, timeframeScores, trendlineOutput } = input;
+    const { globalLongPercent, globalShortPercent, timeframeScores, trendlineOutput, emaContext, volumeContext } = input;
     const pct = direction === "long" ? globalLongPercent : globalShortPercent;
 
     let conf = pct;
@@ -653,6 +700,9 @@ export class SignalEngine {
 
     if (trendlineOutput.trendlineCount > 0) conf += 5;
     if (state === "ready_long" || state === "ready_short") conf += 8;
+    if (emaContext?.bullishAligned && direction === "long") conf += 5;
+    if (emaContext?.bearishAligned && direction === "short") conf += 5;
+    if (volumeContext?.relativeVolume && volumeContext.relativeVolume >= 1.2) conf += 4;
 
     return Math.min(99, Math.max(20, Math.round(conf)));
   }
@@ -719,6 +769,17 @@ export class SignalEngine {
     details.push(`Pivot: ${input.pivotRelation.levels.pivot.toFixed(2)}`);
     details.push(`Pivot state: ${input.pivotRelation.state}`);
     details.push(`Trendlines: ${input.trendlineOutput.trendlineCount} active`);
+    details.push(`Structure: ${input.structureState}`);
+    if (input.emaContext) {
+      details.push(
+        `EMA: 20 ${input.emaContext.ema20 ?? "N/A"} / 50 ${input.emaContext.ema50 ?? "N/A"} / 200 ${input.emaContext.ema200 ?? "N/A"}`
+      );
+    }
+    if (input.volumeContext) {
+      details.push(
+        `Volume: RVOL ${input.volumeContext.relativeVolume.toFixed(2)} / bull ${Math.round(input.volumeContext.bullVolumeRatio * 100)}% / bear ${Math.round(input.volumeContext.bearVolumeRatio * 100)}%`
+      );
+    }
 
     const bigFrames = input.timeframeScores.filter((s) =>
       ["4h", "1d", "1w"].includes(s.timeframe)

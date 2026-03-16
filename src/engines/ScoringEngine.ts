@@ -19,6 +19,8 @@ export class ScoringEngine {
       trendline: 0,
       structure: 0,
       momentum: 0,
+      ema: 0,
+      volume: 0,
       volatility: 0,
       sr: 0,
     };
@@ -31,6 +33,8 @@ export class ScoringEngine {
     this.scoreTrendlines(input.trendlineOutput, longComponents, shortComponents);
     this.scoreStructure(input.structureState, longComponents, shortComponents);
     this.scoreMomentum(input.momentumScore, longComponents, shortComponents);
+    this.scoreEMA(input.emaContext, longComponents, shortComponents);
+    this.scoreVolume(input.volumeContext, longComponents, shortComponents);
     this.scoreVolatility(input.volatilityScore, longComponents, shortComponents);
     this.scoreSR(input, longComponents, shortComponents);
 
@@ -75,6 +79,8 @@ export class ScoringEngine {
         trendline: longComponents.trendline - shortComponents.trendline,
         structure: longComponents.structure - shortComponents.structure,
         momentum: longComponents.momentum - shortComponents.momentum,
+        ema: longComponents.ema - shortComponents.ema,
+        volume: longComponents.volume - shortComponents.volume,
         volatility: longComponents.volatility - shortComponents.volatility,
         sr: longComponents.sr - shortComponents.sr,
       },
@@ -269,6 +275,56 @@ export class ScoringEngine {
     }
   }
 
+  private scoreEMA(
+    emaContext: ScoringEngineInput["emaContext"],
+    long: ScoreComponents,
+    short: ScoreComponents
+  ): void {
+    if (!emaContext) return;
+
+    if (emaContext.bullishAligned) {
+      long.ema += 12;
+    } else if (emaContext.bearishAligned) {
+      short.ema += 12;
+    }
+
+    if (emaContext.priceAboveEma20) long.ema += 3;
+    else short.ema += 3;
+
+    if (emaContext.priceAboveEma50) long.ema += 2;
+    else short.ema += 2;
+
+    if (emaContext.ema20Slope > 0.15) long.ema += 3;
+    else if (emaContext.ema20Slope < -0.15) short.ema += 3;
+
+    if (emaContext.ema50Slope > 0.1) long.ema += 2;
+    else if (emaContext.ema50Slope < -0.1) short.ema += 2;
+  }
+
+  private scoreVolume(
+    volumeContext: ScoringEngineInput["volumeContext"],
+    long: ScoreComponents,
+    short: ScoreComponents
+  ): void {
+    if (!volumeContext) return;
+
+    if (volumeContext.relativeVolume >= 1.25) {
+      if (volumeContext.bullVolumeRatio >= 0.56) long.volume += 7;
+      if (volumeContext.bearVolumeRatio >= 0.56) short.volume += 7;
+    } else if (volumeContext.relativeVolume >= 1.05) {
+      if (volumeContext.bullVolumeRatio > volumeContext.bearVolumeRatio) long.volume += 3;
+      else if (volumeContext.bearVolumeRatio > volumeContext.bullVolumeRatio) short.volume += 3;
+    } else if (volumeContext.relativeVolume < 0.75) {
+      long.volume -= 2;
+      short.volume -= 2;
+    }
+
+    if (volumeContext.trend === "expanding") {
+      if (volumeContext.bullVolumeRatio > 0.54) long.volume += 2;
+      if (volumeContext.bearVolumeRatio > 0.54) short.volume += 2;
+    }
+  }
+
   private scoreVolatility(
     volScore: number | undefined,
     long: ScoreComponents,
@@ -332,6 +388,16 @@ export class ScoringEngine {
       adjShort *= 0.9;
     }
 
+    if (input.emaContext) {
+      if (input.emaContext.bearishAligned) adjLong *= 0.88;
+      if (input.emaContext.bullishAligned) adjShort *= 0.88;
+    }
+
+    if (input.volumeContext && input.volumeContext.relativeVolume < 0.7) {
+      adjLong *= 0.94;
+      adjShort *= 0.94;
+    }
+
     return {
       adjustedLong: Math.max(5, adjLong),
       adjustedShort: Math.max(5, adjShort),
@@ -357,6 +423,16 @@ export class ScoringEngine {
     const netStructure = longComp.structure - shortComp.structure;
     if (Math.abs(netStructure) > 5) {
       parts.push(`Structure: ${netStructure > 0 ? "bullish" : "bearish"}`);
+    }
+
+    const netEMA = longComp.ema - shortComp.ema;
+    if (Math.abs(netEMA) > 5) {
+      parts.push(`EMA: ${netEMA > 0 ? "bullish" : "bearish"}`);
+    }
+
+    const netVolume = longComp.volume - shortComp.volume;
+    if (Math.abs(netVolume) > 3) {
+      parts.push(`Volume: ${netVolume > 0 ? "bullish" : "bearish"}`);
     }
 
     return parts;

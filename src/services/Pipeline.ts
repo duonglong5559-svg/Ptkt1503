@@ -10,6 +10,8 @@ import {
   StructureState,
   FeedHealth,
   NewsItem,
+  EMAContext,
+  VolumeContext,
   createInitialFeedHealth,
 } from "../types";
 import {
@@ -27,6 +29,8 @@ import {
   computeMomentumScore,
   detectMomentumDirection,
   computeSRLevels,
+  computeEMAContext,
+  computeVolumeContext,
 } from "../utils";
 import { StructureEngineOutput } from "../engines/StructureEngine";
 import { SymbolMapping } from "./SymbolMapping";
@@ -48,6 +52,8 @@ export type TimeframeAnalysisResult = {
   structure: StructureEngineOutput;
   score: TimeframeScore;
   atr: number;
+  emaContext: EMAContext;
+  volumeContext: VolumeContext;
 };
 
 const ANALYSIS_TIMEFRAMES = [
@@ -160,6 +166,8 @@ export class Pipeline {
       pivotRelation,
       trendlineOutput,
       structureState: primaryResult?.structure.state || "range",
+      emaContext: primaryResult?.emaContext,
+      volumeContext: primaryResult?.volumeContext,
       currentPrice,
       atr: primaryResult?.atr,
       nearestSupport: primaryResult?.pivotRelation.nearestSupport,
@@ -221,6 +229,8 @@ export class Pipeline {
     const volScore = computeVolatilityScore(atr, currentPrice);
     const momScore = computeMomentumScore(candles);
     const momentum = detectMomentumDirection(candles);
+    const emaContext = computeEMAContext(candles);
+    const volumeContext = computeVolumeContext(candles);
 
     const swings = this.swingEngine.analyze({
       symbol: this.state.symbol,
@@ -289,6 +299,8 @@ export class Pipeline {
       pivotRelation,
       trendlineOutput: trendlines,
       structureState: structure.state,
+      emaContext,
+      volumeContext,
       srContext: {
         nearestSupport: srContext.nearestSupport,
         nearestResistance: srContext.nearestResistance,
@@ -308,6 +320,8 @@ export class Pipeline {
       structure,
       score,
       atr,
+      emaContext,
+      volumeContext,
     };
   }
 

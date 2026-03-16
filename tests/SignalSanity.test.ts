@@ -10,8 +10,8 @@ export function testSignalSanity(assert: AssertFn): void {
     const result = engine.evaluate({
       symbol: "BTCUSDT",
       timeframeScores: [
-        { symbol: "BTCUSDT", timeframe: "4h", longScore: 70, shortScore: 30, dominantBias: "bullish", components: { pattern: 5, pivot: 5, trendline: 5, structure: 10, momentum: 5, volatility: 0, sr: 0 }, confidence: 70, summary: [], updatedAt: Date.now() },
-        { symbol: "BTCUSDT", timeframe: "1d", longScore: 65, shortScore: 35, dominantBias: "bullish", components: { pattern: 5, pivot: 5, trendline: 5, structure: 10, momentum: 5, volatility: 0, sr: 0 }, confidence: 65, summary: [], updatedAt: Date.now() },
+        { symbol: "BTCUSDT", timeframe: "4h", longScore: 70, shortScore: 30, dominantBias: "bullish", components: { pattern: 5, pivot: 5, trendline: 5, structure: 10, momentum: 5, ema: 4, volume: 3, volatility: 0, sr: 0 }, confidence: 70, summary: [], updatedAt: Date.now() },
+        { symbol: "BTCUSDT", timeframe: "1d", longScore: 65, shortScore: 35, dominantBias: "bullish", components: { pattern: 5, pivot: 5, trendline: 5, structure: 10, momentum: 5, ema: 4, volume: 3, volatility: 0, sr: 0 }, confidence: 65, summary: [], updatedAt: Date.now() },
       ],
       globalLongPercent: 70,
       globalShortPercent: 30,
@@ -49,8 +49,8 @@ export function testSignalSanity(assert: AssertFn): void {
     const result = engine.evaluate({
       symbol: "BTCUSDT",
       timeframeScores: [
-        { symbol: "BTCUSDT", timeframe: "4h", longScore: 30, shortScore: 70, dominantBias: "bearish", components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, volatility: 0, sr: 0 }, confidence: 70, summary: [], updatedAt: Date.now() },
-        { symbol: "BTCUSDT", timeframe: "1d", longScore: 35, shortScore: 65, dominantBias: "bearish", components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, volatility: 0, sr: 0 }, confidence: 65, summary: [], updatedAt: Date.now() },
+        { symbol: "BTCUSDT", timeframe: "4h", longScore: 30, shortScore: 70, dominantBias: "bearish", components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, ema: 0, volume: 0, volatility: 0, sr: 0 }, confidence: 70, summary: [], updatedAt: Date.now() },
+        { symbol: "BTCUSDT", timeframe: "1d", longScore: 35, shortScore: 65, dominantBias: "bearish", components: { pattern: 0, pivot: 0, trendline: 0, structure: 0, momentum: 0, ema: 0, volume: 0, volatility: 0, sr: 0 }, confidence: 65, summary: [], updatedAt: Date.now() },
       ],
       globalLongPercent: 30,
       globalShortPercent: 70,
@@ -88,7 +88,7 @@ export function testSignalSanity(assert: AssertFn): void {
     const result = engine.evaluate({
       symbol: "BTCUSDT",
       timeframeScores: [
-        { symbol: "BTCUSDT", timeframe: "4h", longScore: 70, shortScore: 30, dominantBias: "bullish", components: { pattern: 5, pivot: 5, trendline: 5, structure: 10, momentum: 5, volatility: 0, sr: 0 }, confidence: 70, summary: [], updatedAt: Date.now() },
+        { symbol: "BTCUSDT", timeframe: "4h", longScore: 70, shortScore: 30, dominantBias: "bullish", components: { pattern: 5, pivot: 5, trendline: 5, structure: 10, momentum: 5, ema: 4, volume: 3, volatility: 0, sr: 0 }, confidence: 70, summary: [], updatedAt: Date.now() },
       ],
       globalLongPercent: 70,
       globalShortPercent: 30,

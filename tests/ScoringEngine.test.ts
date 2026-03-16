@@ -183,4 +183,43 @@ export function testScoringEngine(assert: AssertFn) {
 
     assert(scoreWithSR.longScore > 0, "Long score exists even with SR penalty");
   }
+
+  // Test: EMA and volume confirmation strengthen bullish score
+  {
+    const score = engine.scoreTimeframe({
+      symbol: "BTCUSDT",
+      timeframe: "4h",
+      patternSignals: [],
+      pivotRelation: makePivotRelation({ state: "above_pivot", directionBias: "bullish" }),
+      trendlineOutput: makeTrendlineOutput(),
+      structureState: "uptrend",
+      emaContext: {
+        ema20: 104,
+        ema50: 101,
+        ema200: 96,
+        priceAboveEma20: true,
+        priceAboveEma50: true,
+        bullishAligned: true,
+        bearishAligned: false,
+        ema20Slope: 0.8,
+        ema50Slope: 0.5,
+        ema200Slope: 0.2,
+      },
+      volumeContext: {
+        currentVolume: 1800,
+        averageVolume: 1000,
+        relativeVolume: 1.8,
+        bullVolumeRatio: 0.65,
+        bearVolumeRatio: 0.35,
+        trend: "expanding",
+        breakoutConfirmed: true,
+      },
+      momentumScore: 68,
+      currentPrice: 105,
+    });
+
+    assert(score.longScore > score.shortScore, "EMA and bullish volume reinforce long bias");
+    assert(score.components.ema > 0, "EMA component contributes positively");
+    assert(score.components.volume > 0, "Volume component contributes positively");
+  }
 }

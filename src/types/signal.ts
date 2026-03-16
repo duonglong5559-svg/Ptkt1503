@@ -1,4 +1,4 @@
-import { TimeframeScore } from "./scoring";
+import { TimeframeScore, EMAContext, VolumeContext } from "./scoring";
 import { PivotRelation } from "./pivot";
 import { TrendlineEngineOutput } from "./trendline";
 
@@ -63,6 +63,8 @@ export type SignalEngineInput = {
   trendlineOutput: TrendlineEngineOutput;
 
   structureState: string;
+  emaContext?: EMAContext;
+  volumeContext?: VolumeContext;
   currentPrice: number;
   atr?: number;
 

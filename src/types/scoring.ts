@@ -8,8 +8,33 @@ export type ScoreComponents = {
   trendline: number;
   structure: number;
   momentum: number;
+  ema: number;
+  volume: number;
   volatility: number;
   sr: number;
+};
+
+export type EMAContext = {
+  ema20?: number;
+  ema50?: number;
+  ema200?: number;
+  priceAboveEma20: boolean;
+  priceAboveEma50: boolean;
+  bullishAligned: boolean;
+  bearishAligned: boolean;
+  ema20Slope: number;
+  ema50Slope: number;
+  ema200Slope: number;
+};
+
+export type VolumeContext = {
+  currentVolume: number;
+  averageVolume: number;
+  relativeVolume: number;
+  bullVolumeRatio: number;
+  bearVolumeRatio: number;
+  trend: "expanding" | "contracting" | "flat";
+  breakoutConfirmed: boolean;
 };
 
 export type TimeframeScore = {
@@ -43,6 +68,8 @@ export type ScoringEngineInput = {
   atr?: number;
   volatilityScore?: number;
   momentumScore?: number;
+  emaContext?: EMAContext;
+  volumeContext?: VolumeContext;
   currentPrice: number;
 };
 
