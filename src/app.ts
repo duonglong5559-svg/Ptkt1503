@@ -52,6 +52,8 @@ type SetupCardModel = {
   scalp?: number;
   swing?: number;
   stopLoss?: number;
+  statusText: string;
+  summaryText: string;
 };
 
 type ChartCalloutModel = {
@@ -612,41 +614,48 @@ function buildSetupCardModels(payload: UIPayload): SetupCardModel[] {
   return [
     {
       tone: "long",
-      title: "HO TRO",
+      title: "HỖ TRỢ",
       anchorLabel: "Hỗ trợ gần",
       anchorPrice: longAnchor,
       confidence: signal.confidenceLong,
       confidenceText: getConfidenceText(signal.confidenceLong),
       subtitle: describeZoneDistance("long", longAnchor, payload.currentPrice, atr),
-      tags: [selectedTf.toUpperCase(), signal.state.includes("long") ? "AUTO" : "PLAN"],
+      tags: [signal.state.includes("long") ? "AUTO" : "PLAN", selectedTf.toUpperCase()],
       entry: signal.entryLong || longAnchor,
       scalp: longTargets.scalp,
       swing: longTargets.swing,
       stopLoss: signal.direction === "long"
         ? signal.stopLoss
         : getDefaultStopLoss("long", signal.entryLong || longAnchor, payload.currentPrice, atr),
+      statusText: `${getConfidenceText(signal.confidenceLong)} · ${signal.confidenceLong}% tin cậy · ${computeRiskRewardText("long", signal.entryLong || longAnchor, signal.direction === "long" ? signal.stopLoss : getDefaultStopLoss("long", signal.entryLong || longAnchor, payload.currentPrice, atr), longTargets.swing || longTargets.scalp)}`,
+      summaryText: payload.signal.direction === "long"
+        ? "Giá đang vào vùng hỗ trợ ưu tiên cho kịch bản Long."
+        : "Canh mua khi giá phản ứng tốt tại hỗ trợ.",
     },
     {
       tone: "short",
-      title: "KHANG CU",
+      title: "KHÁNG CỰ",
       anchorLabel: "Kháng cự gần",
       anchorPrice: shortAnchor,
       confidence: signal.confidenceShort,
       confidenceText: getConfidenceText(signal.confidenceShort),
       subtitle: describeZoneDistance("short", shortAnchor, payload.currentPrice, atr),
-      tags: [selectedTf.toUpperCase(), signal.state.includes("short") ? "AUTO" : "PLAN"],
+      tags: [signal.state.includes("short") ? "AUTO" : "PLAN", selectedTf.toUpperCase()],
       entry: signal.entryShort || shortAnchor,
       scalp: shortTargets.scalp,
       swing: shortTargets.swing,
       stopLoss: signal.direction === "short"
         ? signal.stopLoss
         : getDefaultStopLoss("short", signal.entryShort || shortAnchor, payload.currentPrice, atr),
+      statusText: `${getConfidenceText(signal.confidenceShort)} · ${signal.confidenceShort}% tin cậy · ${computeRiskRewardText("short", signal.entryShort || shortAnchor, signal.direction === "short" ? signal.stopLoss : getDefaultStopLoss("short", signal.entryShort || shortAnchor, payload.currentPrice, atr), shortTargets.swing || shortTargets.scalp)}`,
+      summaryText: payload.signal.direction === "short"
+        ? "Giá đang vào vùng kháng cự ưu tiên cho kịch bản Short."
+        : "Canh bán khi giá bị từ chối tại kháng cự.",
     },
   ];
 }
 
 function renderSetupCard(card: SetupCardModel): string {
-  const rrText = computeRiskRewardText(card.tone, card.entry, card.stopLoss, card.swing || card.scalp);
   return `
     <div class="signal-card ${card.tone}">
       <div class="signal-card-header">
@@ -658,27 +667,24 @@ function renderSetupCard(card: SetupCardModel): string {
           ${card.tags.map((tag, index) => `<span class="signal-tag ${index === card.tags.length - 1 ? card.tone : "neutral"}">${tag}</span>`).join("")}
         </div>
       </div>
-      <div class="signal-card-strength ${card.tone}">${card.confidenceText} · ${card.confidence}% tin cậy · ${rrText}</div>
-      <div class="signal-grid">
-        <div class="signal-metric active ${card.tone}">
+      <div class="signal-card-strength ${card.tone}">${card.statusText}</div>
+      <div class="signal-card-subtitle signal-card-note">${card.summaryText}</div>
+      <div class="signal-price-list">
+        <div class="signal-price-row">
           <span>Entry</span>
           <strong>${formatSignalPrice(card.entry)}</strong>
-          <small>Điểm vào ưu tiên</small>
         </div>
-        <div class="signal-metric">
+        <div class="signal-price-row">
           <span>Scalp</span>
           <strong>${formatSignalPrice(card.scalp)}</strong>
-          <small>Mục tiêu gần</small>
         </div>
-        <div class="signal-metric">
+        <div class="signal-price-row">
           <span>Swing</span>
           <strong>${formatSignalPrice(card.swing)}</strong>
-          <small>Mục tiêu xa hơn</small>
         </div>
-        <div class="signal-metric">
-          <span>Stop Loss</span>
+        <div class="signal-price-row">
+          <span>StopLoss</span>
           <strong>${formatSignalPrice(card.stopLoss)}</strong>
-          <small>Bảo vệ vị thế</small>
         </div>
       </div>
     </div>
@@ -688,21 +694,7 @@ function renderSetupCard(card: SetupCardModel): string {
 function updateSignalOverlay(payload: UIPayload) {
   const el = document.getElementById("signal-overlay");
   if (!el) return;
-
-  const chips = [
-    { tone: "neutral", label: selectedTf.toUpperCase(), value: payload.signal.state.replace(/_/g, " ") },
-    { tone: "long", label: "Long", value: formatSignalPrice(payload.signal.entryLong) },
-    { tone: "short", label: "Short", value: formatSignalPrice(payload.signal.entryShort) },
-  ];
-
-  const targetPrice = payload.signal.target ?? payload.signal.takeProfit;
-  if (targetPrice) {
-    chips.push({ tone: "neutral", label: "Target", value: formatSignalPrice(targetPrice) });
-  }
-
-  el.innerHTML = chips
-    .map((chip) => `<div class="signal-overlay-chip ${chip.tone}">${chip.label}: <strong>${chip.value}</strong></div>`)
-    .join("");
+  el.innerHTML = "";
 }
 
 function positionChartCallouts(callouts: ChartCalloutModel[], height: number): ChartCalloutModel[] {
@@ -748,10 +740,10 @@ function updateChartCallouts(payload: UIPayload) {
   const tf = getSelectedTimeframeResult();
   const targetPrice = payload.signal.target ?? payload.signal.takeProfit;
   const rawCallouts = [
-    targetPrice ? { tone: "target" as const, label: "Gia thi truong se huong toi", price: targetPrice } : null,
-    payload.signal.entryShort ? { tone: "short" as const, label: "Dat lenh cho tu dong Short", price: payload.signal.entryShort } : null,
-    payload.signal.entryLong ? { tone: "long" as const, label: "Dat lenh cho tu dong Long", price: payload.signal.entryLong } : null,
-    tf?.pivotRelation.levels.pivot ? { tone: "plan" as const, label: "Vung Pivot can quan sat", price: tf.pivotRelation.levels.pivot } : null,
+    targetPrice ? { tone: "target" as const, label: "Giá thị trường sẽ hướng tới", price: targetPrice } : null,
+    payload.signal.entryShort ? { tone: "short" as const, label: "Đặt lệnh chờ tự động Short", price: payload.signal.entryShort } : null,
+    payload.signal.entryLong ? { tone: "long" as const, label: "Đặt lệnh chờ tự động Long", price: payload.signal.entryLong } : null,
+    tf?.pivotRelation.levels.pivot ? { tone: "plan" as const, label: "Theo dõi phản ứng tại Pivot", price: tf.pivotRelation.levels.pivot } : null,
   ].filter((item): item is { tone: "long" | "short" | "target" | "plan"; label: string; price: number } => item !== null);
 
   const projected: ChartCalloutModel[] = [];
@@ -773,8 +765,8 @@ function updateChartCallouts(payload: UIPayload) {
   el.innerHTML = positioned
     .map((item) => `
       <div class="chart-callout ${item.tone}" style="top:${item.top.toFixed(0)}px">
-        <span>${item.label}</span>
-        <strong>${formatSignalPrice(item.price)}</strong>
+        <span class="chart-callout-label">${item.label}</span>
+        <strong class="chart-callout-price">${formatSignalPrice(item.price)}</strong>
       </div>
     `)
     .join("");
@@ -789,7 +781,7 @@ function updateSignalSnapshot(payload: UIPayload) {
     <div class="signal-summary-card">
       <div class="signal-card-header">
         <div>
-          <div class="signal-card-title">Snapshot setup</div>
+          <div class="signal-card-title">Tín hiệu hiện tại</div>
           <div class="signal-card-subtitle">${signal.summary}</div>
         </div>
         <div class="signal-card-tags">
@@ -798,9 +790,9 @@ function updateSignalSnapshot(payload: UIPayload) {
         </div>
       </div>
       <div class="signal-summary-text">
-        Long ${signal.confidenceLong}% / Short ${signal.confidenceShort}% ·
-        Entry Long ${formatDistanceFromPrice(signal.entryLong, payload.currentPrice)} ·
-        Entry Short ${formatDistanceFromPrice(signal.entryShort, payload.currentPrice)}
+        Bias hiện tại: Long ${signal.confidenceLong}% / Short ${signal.confidenceShort}%.
+        Entry Long ${formatDistanceFromPrice(signal.entryLong, payload.currentPrice)}.
+        Entry Short ${formatDistanceFromPrice(signal.entryShort, payload.currentPrice)}.
       </div>
     </div>
     <div class="setup-list">
