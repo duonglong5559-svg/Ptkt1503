@@ -39,8 +39,9 @@ export class SignalEngine {
     const finalState: SignalState = invalidationReason ? "invalidated" : state;
     const direction = this.resolveDirection(finalState);
 
-    const entryLong = direction === "long" ? this.computeEntryLong(input) : undefined;
-    const entryShort = direction === "short" ? this.computeEntryShort(input) : undefined;
+    const showSetupLevels = direction !== "neutral";
+    const entryLong = showSetupLevels ? this.computeEntryLong(input) : undefined;
+    const entryShort = showSetupLevels ? this.computeEntryShort(input) : undefined;
     const stopLoss = this.computeStopLoss(input, direction, entryLong, entryShort);
     const takeProfit = this.computeTakeProfit(input, direction, entryLong, entryShort, stopLoss);
     const target = this.computeTarget(input, direction, entryLong, entryShort, takeProfit);

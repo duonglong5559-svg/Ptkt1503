@@ -254,18 +254,17 @@ function renderEntryLines(signal: TradingSignal) {
   if (!candleSeries) return;
   for (const pl of priceLines) { try { candleSeries.removePriceLine(pl); } catch {} }
   priceLines = [];
-  const add = (price: number | undefined, color: string, style: any, title: string) => {
+  const add = (price: number | undefined, color: string, style: any, title: string, width = 1) => {
     if (!price || !candleSeries) return;
-    try { priceLines.push(candleSeries.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title })); } catch {}
+    try { priceLines.push(candleSeries.createPriceLine({ price, color, lineWidth: width, lineStyle: style, axisLabelVisible: true, title })); } catch {}
   };
-  if (signal.direction === "long") {
-    add(signal.entryLong, "#26a69a", LineStyle.Dashed, `Buy ${signal.entryLong?.toFixed(2)}`);
-  } else if (signal.direction === "short") {
-    add(signal.entryShort, "#ef5350", LineStyle.Dashed, `Sell ${signal.entryShort?.toFixed(2)}`);
-  }
-  add(signal.target, "#ffd700", LineStyle.Dotted, "Target");
   if (signal.direction !== "neutral") {
-    add(signal.stopLoss, "#ff6d00", LineStyle.Dotted, "SL");
+    add(signal.entryShort, "rgba(255,23,68,0.9)", LineStyle.Dashed, "Đặt Lệnh Chờ Tự Động Short", signal.direction === "short" ? 2 : 1);
+    add(signal.entryLong, "rgba(0,230,118,0.9)", LineStyle.Dashed, "Đặt Lệnh Chờ Tự Động Long", signal.direction === "long" ? 2 : 1);
+  }
+  add(signal.target, "#ffd700", LineStyle.Dotted, "Giá Thị Trường Sẽ Hướng Tới", 2);
+  if (signal.direction !== "neutral") {
+    add(signal.stopLoss, "#ff6d00", LineStyle.Dotted, "Stop Loss", 1);
   }
 }
 
@@ -410,18 +409,51 @@ function updateTimeframeCards(payload: UIPayload) {
   for (const tf of TIMEFRAMES) {
     const d = payload.timeframes[tf];
     const card = document.createElement("div");
+    const levels = getTimeframeDisplayLevels(tf);
     if (d) {
       const bias = d.bias || "neutral";
       card.className = `tf-card${tf === selectedTf ? " active" : ""}${bias === "bullish" ? " bullish" : bias === "bearish" ? " bearish" : ""}`;
-      const dominant = d.long >= d.short ? `L${d.long}` : `S${d.short}`;
-      card.innerHTML = `<span class="tf-label">${tf.toUpperCase()}</span><span class="tf-price">${dominant}%</span>`;
+      card.innerHTML = `
+        <span class="tf-level tf-top support${levels.support === undefined ? " empty" : ""}">${formatCompactPrice(levels.support)}</span>
+        <span class="tf-label">${tf.toUpperCase()}</span>
+        <span class="tf-level tf-bottom resistance${levels.resistance === undefined ? " empty" : ""}">${formatCompactPrice(levels.resistance)}</span>
+      `;
     } else {
       card.className = `tf-card${tf === selectedTf ? " active" : ""}`;
-      card.innerHTML = `<span class="tf-label">${tf.toUpperCase()}</span><span class="tf-price" style="color:var(--text3)">---</span>`;
+      card.innerHTML = `
+        <span class="tf-level tf-top support empty">---</span>
+        <span class="tf-label">${tf.toUpperCase()}</span>
+        <span class="tf-level tf-bottom resistance empty">---</span>
+      `;
     }
     card.onclick = () => switchTimeframe(tf);
     row.appendChild(card);
   }
+}
+
+function getTimeframeDisplayLevels(tf: string): { support?: number; resistance?: number } {
+  const result = pipeline?.getState().timeframeResults.get(tf) as TimeframeAnalysisResult | undefined;
+  if (!result) return {};
+
+  const trendlineSupport = result.trendlines.primarySupport && !result.trendlines.primarySupport.isBroken
+    ? result.trendlines.primarySupport.projectedPriceNow
+    : undefined;
+  const trendlineResistance = result.trendlines.primaryResistance && !result.trendlines.primaryResistance.isBroken
+    ? result.trendlines.primaryResistance.projectedPriceNow
+    : undefined;
+
+  return {
+    support: trendlineSupport ?? result.pivotRelation.nearestSupport,
+    resistance: trendlineResistance ?? result.pivotRelation.nearestResistance,
+  };
+}
+
+function formatCompactPrice(price?: number): string {
+  if (price === undefined || !Number.isFinite(price) || price <= 0) return "---";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(price);
 }
 
 function updateMarquee(text: string) {

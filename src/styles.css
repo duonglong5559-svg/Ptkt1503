@@ -38,14 +38,15 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 /* TIMEFRAME ROW */
 #tf-row{display:flex;gap:4px;padding:5px 8px;overflow-x:auto;flex-shrink:0;scrollbar-width:none}
 #tf-row::-webkit-scrollbar{display:none}
-.tf-card{min-width:52px;padding:5px 6px;border-radius:var(--radius);text-align:center;cursor:pointer;border:1px solid var(--border);background:var(--bg3);flex-shrink:0;transition:all .2s}
+.tf-card{min-width:58px;min-height:64px;padding:5px 6px;border-radius:var(--radius);text-align:center;cursor:pointer;border:1px solid var(--border);background:var(--bg3);flex-shrink:0;transition:all .2s;display:flex;flex-direction:column;justify-content:space-between}
 .tf-card.active{border-color:var(--gold);box-shadow:0 0 8px rgba(255,215,0,.25)}
 .tf-card.bullish{background:linear-gradient(180deg,rgba(0,230,118,.12),var(--bg3))}
 .tf-card.bearish{background:linear-gradient(180deg,rgba(255,23,68,.12),var(--bg3))}
-.tf-label{font-size:10px;font-weight:700;color:var(--text2);display:block}
-.tf-price{font-size:10px;font-weight:600;color:var(--text);display:block;margin-top:1px}
-.tf-card.bullish .tf-price{color:var(--green)}
-.tf-card.bearish .tf-price{color:var(--red)}
+.tf-label{font-size:12px;font-weight:700;color:var(--text2);display:block}
+.tf-level{font-size:10px;font-weight:700;display:block;line-height:1.1;white-space:nowrap}
+.tf-level.support{color:var(--green)}
+.tf-level.resistance{color:var(--red)}
+.tf-level.empty{color:var(--text3)}
 
 /* MARQUEE */
 #marquee{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;white-space:nowrap;flex-shrink:0;padding:4px 0}
@@ -147,7 +148,7 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 /* RESPONSIVE */
 @media(max-width:400px){
   .app-title{max-width:120px;font-size:11px}
-  .tf-card{min-width:46px;padding:4px}
+  .tf-card{min-width:52px;min-height:60px;padding:4px}
   #symbol-select{max-width:112px}
   .news-card-footer{flex-direction:column;align-items:flex-start}
   .news-actions{justify-content:flex-start}
