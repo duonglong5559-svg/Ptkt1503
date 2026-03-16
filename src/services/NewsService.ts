@@ -6,7 +6,7 @@ const FETCH_TIMEOUT = 10000;
 const POSITIVE_KEYWORDS = ["bull", "surge", "rally", "gain", "rise", "growth", "recover", "pump", "breakout", "upgrade", "adoption"];
 const NEGATIVE_KEYWORDS = ["bear", "crash", "drop", "fall", "decline", "loss", "dump", "fear", "risk", "warn", "plunge", "hack", "ban"];
 
-function mapAsset(text: string): NewsItem["asset"] {
+export function mapAsset(text: string): NewsItem["asset"] {
   const lower = text.toLowerCase();
   if (lower.includes("bitcoin") || lower.includes("btc")) return "BTC";
   if (lower.includes("ethereum") || lower.includes("eth")) return "ETH";
@@ -14,11 +14,14 @@ function mapAsset(text: string): NewsItem["asset"] {
   return "general";
 }
 
-function analyzeSentiment(title: string, body: string): { sentiment: SentimentLabel; confidence: number } {
+export function analyzeSentiment(title: string, body: string): { sentiment: SentimentLabel; confidence: number } {
   const text = (title + " " + (body || "")).toLowerCase();
   const pos = POSITIVE_KEYWORDS.filter((w) => text.includes(w)).length;
   const neg = NEGATIVE_KEYWORDS.filter((w) => text.includes(w)).length;
-  const total = pos + neg || 1;
+  const total = pos + neg;
+  if (total === 0) {
+    return { sentiment: "neutral", confidence: 35 };
+  }
   const score = Math.round((pos / total) * 100);
 
   let sentiment: SentimentLabel = "neutral";
@@ -29,7 +32,7 @@ function analyzeSentiment(title: string, body: string): { sentiment: SentimentLa
   return { sentiment, confidence };
 }
 
-function estimateImpact(title: string): NewsImpact {
+export function estimateImpact(title: string): NewsImpact {
   const lower = title.toLowerCase();
   const highImpact = ["crash", "ban", "hack", "regulation", "fed", "etf", "halving", "war"];
   const medImpact = ["surge", "rally", "drop", "upgrade", "fork", "adoption"];
@@ -67,6 +70,8 @@ export class NewsService {
           summary: (a.body || "").slice(0, 200),
           source: a.source_info?.name || a.source || "Unknown",
           publishedAt: (a.published_on || 0) * 1000,
+          url: a.url,
+          categories: typeof a.categories === "string" ? a.categories.split("|").filter(Boolean) : [],
           sentiment,
           confidence,
           impact: estimateImpact(a.title),

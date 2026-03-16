@@ -6,6 +6,7 @@ import { testScoringEngine } from "./ScoringEngine.test";
 import { testSignalEngine } from "./SignalEngine.test";
 import { testPipeline } from "./Pipeline.test";
 import { testFeedHealth } from "./FeedHealth.test";
+import { testNewsService } from "./NewsService.test";
 import { testSymbolMapping } from "./SymbolMapping.test";
 import { testCandleConfirmation } from "./CandleConfirmation.test";
 import { testSignalSanity } from "./SignalSanity.test";
@@ -49,6 +50,9 @@ async function run() {
 
   console.log("\n▸ FeedHealth");
   testFeedHealth(assert);
+
+  console.log("\n▸ NewsService");
+  testNewsService(assert);
 
   console.log("\n▸ SymbolMapping");
   testSymbolMapping(assert);

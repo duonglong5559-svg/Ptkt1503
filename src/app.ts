@@ -15,6 +15,13 @@ import { ANALYSIS_TIMEFRAMES } from "./types/symbol";
 
 const TIMEFRAMES = [...ANALYSIS_TIMEFRAMES];
 const CANDLE_LIMIT = 150;
+type NewsFilterKey = "all" | "BTC" | "ETH" | "PAXG";
+const NEWS_FILTERS: Array<{ key: NewsFilterKey; label: string }> = [
+  { key: "all", label: "Tất cả" },
+  { key: "BTC", label: "Bitcoin" },
+  { key: "ETH", label: "Ethereum" },
+  { key: "PAXG", label: "Vàng/PAXG" },
+];
 
 let currentSymbol = "BTCUSDT";
 let selectedTf = "1h";
@@ -31,6 +38,7 @@ let priceLines: any[] = [];
 let lastPayload: UIPayload | null = null;
 let currentPrice = 0;
 let chartCandleCache: Candle[] = [];
+let selectedNewsFilter: NewsFilterKey = "all";
 
 // ── Bootstrap ───────────────────────────────────────────────
 async function init() {
@@ -367,6 +375,10 @@ function updateUI(payload: UIPayload) {
   updatePriceTag(payload.currentPrice);
   updateTrendlineTab(payload);
   updateHealthIndicator();
+  if (newsLoaded) {
+    renderNewsFilters();
+    renderNewsFromPayload();
+  }
 }
 
 function updateBiasBar(l: number, s: number) {
@@ -562,14 +574,31 @@ function loadNewsIfNeeded() {
   if (newsLoaded) return;
   newsLoaded = true;
   const f = document.getElementById("news-filters")!;
-  f.innerHTML = ["Tất cả","Bitcoin","Ethereum","Vàng/PAXG"].map((c, i) => `<button class="news-filter${i === 0 ? " active" : ""}">${c}</button>`).join("");
-  f.onclick = (e) => { const b = (e.target as HTMLElement).closest(".news-filter"); if (!b) return; f.querySelectorAll(".news-filter").forEach(x => x.classList.remove("active")); b.classList.add("active"); };
+  f.onclick = (e) => {
+    const b = (e.target as HTMLElement).closest(".news-filter") as HTMLElement | null;
+    const key = b?.dataset.filter as NewsFilterKey | undefined;
+    if (!key) return;
+    selectedNewsFilter = key;
+    renderNewsFilters();
+    renderNewsFromPayload();
+  };
+  renderNewsFilters();
   renderNewsFromPayload();
+}
+
+function renderNewsFilters() {
+  const f = document.getElementById("news-filters");
+  if (!f) return;
+  const news = getRenderableNews();
+  f.innerHTML = NEWS_FILTERS.map(({ key, label }) => {
+    const count = getNewsCountForFilter(news, key);
+    return `<button class="news-filter${selectedNewsFilter === key ? " active" : ""}" data-filter="${key}">${label}<span class="news-filter-count">${count}</span></button>`;
+  }).join("");
 }
 
 function renderNewsFromPayload() {
   const l = document.getElementById("news-list")!;
-  const news = lastPayload?.news || newsService?.getCachedNews() || [];
+  const news = filterNewsItems(getRenderableNews(), selectedNewsFilter);
   if (!news.length) {
     l.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Không có tin tức</div>';
     return;
@@ -579,9 +608,71 @@ function renderNewsFromPayload() {
     const lb = n.sentiment === "negative" ? "Tiêu cực" : n.sentiment === "positive" ? "Tích cực" : "Trung tính";
     const desc = n.sentiment === "negative" ? "Có thể gây áp lực giảm giá." : n.sentiment === "positive" ? "Có thể hỗ trợ đà tăng." : "Tác động không rõ ràng.";
     const time = new Date(n.publishedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
-    const impactBadge = n.impact === "high" ? " 🔴" : n.impact === "medium" ? " 🟡" : "";
-    return `<div class="news-card"><div class="news-source">${n.source} · ${time}${impactBadge}</div><div class="news-title">${n.title}</div><div class="news-sentiment ${cls}"><strong>Cảm xúc: ${lb} (${n.confidence}%)</strong> - ${desc}</div></div>`;
+    const safeSource = escapeHtml(n.source);
+    const safeTitle = escapeHtml(n.title);
+    const safeSummary = escapeHtml(n.summary || "Chưa có tóm tắt cho bài viết này.");
+    const impactLabel = n.impact === "high" ? "Tác động cao" : n.impact === "medium" ? "Tác động vừa" : "Tác động thấp";
+    const sentimentLabel = `${lb} ${n.confidence}%`;
+    const assetLabel = n.asset === "general" ? "Thị trường chung" : n.asset;
+    const safeUrl = sanitizeUrl(n.url);
+    const tags = [
+      `<span class="news-tag asset">${escapeHtml(assetLabel)}</span>`,
+      `<span class="news-tag impact ${n.impact}">${impactLabel}</span>`,
+      `<span class="news-tag sentiment ${cls}">${escapeHtml(sentimentLabel)}</span>`,
+    ].join("");
+    const actions = safeUrl
+      ? `<a class="news-link" href="${escapeAttribute(safeUrl)}" target="_blank" rel="noreferrer noopener">Xem thêm</a>`
+      : `<span class="news-link disabled">Nguồn ngoài</span>`;
+    return `<article class="news-card">
+      <div class="news-source-row">
+        <div class="news-source">${safeSource}</div>
+        <div class="news-time">${escapeHtml(time)}</div>
+      </div>
+      <div class="news-title">${safeTitle}</div>
+      <div class="news-desc">${safeSummary}</div>
+      <div class="news-card-footer">
+        <div class="news-tags">${tags}</div>
+        <div class="news-actions">${actions}</div>
+      </div>
+      <div class="news-sentiment ${cls}"><strong>Cảm xúc:</strong> ${escapeHtml(lb)} (${n.confidence}%) - ${desc}</div>
+    </article>`;
   }).join("");
+}
+
+function getRenderableNews() {
+  return lastPayload?.news || newsService?.getCachedNews() || [];
+}
+
+function filterNewsItems(news: UIPayload["news"], filter: NewsFilterKey) {
+  if (filter === "all") return news;
+  return news.filter((item) => item.asset === filter || item.asset === "general");
+}
+
+function getNewsCountForFilter(news: UIPayload["news"], filter: NewsFilterKey) {
+  return filterNewsItems(news, filter).length;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeAttribute(value: string) {
+  return escapeHtml(value);
+}
+
+function sanitizeUrl(url?: string) {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
 }
 
 // ── TF Switch ───────────────────────────────────────────────
@@ -615,6 +706,7 @@ function setupSymbolSelector() {
   s.value = currentSymbol;
   s.onchange = () => {
     newsLoaded = false;
+    selectedNewsFilter = "all";
     loadSymbol(s.value);
   };
 }

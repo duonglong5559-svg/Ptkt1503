@@ -8,6 +8,8 @@ export type NewsItem = {
   summary: string;
   source: string;
   publishedAt: number;
+  url?: string;
+  categories?: string[];
   sentiment: SentimentLabel;
   confidence: number;
   impact: NewsImpact;

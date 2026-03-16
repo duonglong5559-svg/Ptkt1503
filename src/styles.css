@@ -13,16 +13,16 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 #app{display:flex;flex-direction:column;height:100%;overflow:hidden}
 
 /* HEADER */
-#header{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;z-index:10}
-.header-left{display:flex;align-items:center;gap:8px}
+#header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;z-index:10}
+.header-left{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
 .logo{background:linear-gradient(135deg,var(--green),var(--cyan));color:#000;font-weight:900;font-size:14px;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center}
-.app-title{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
-.header-right{display:flex;align-items:center;gap:6px}
+.app-title{font-size:12px;font-weight:600;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.header-right{display:flex;align-items:center;gap:6px;min-width:0}
 .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;animation:pulse-glow 2s infinite}
 .badge-long{background:var(--green-dim);color:var(--green);border:1px solid var(--green)}
 .badge-short{background:var(--red-dim);color:var(--red);border:1px solid var(--red)}
 .badge-neutral{background:rgba(158,158,158,.15);color:var(--text2);border:1px solid var(--text3)}
-#symbol-select{background:var(--bg3);color:var(--gold);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;outline:none}
+#symbol-select{background:var(--bg3);color:var(--gold);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;outline:none;max-width:132px}
 #symbol-select option{background:var(--bg2);color:var(--text)}
 
 /* BIAS BAR */
@@ -95,12 +95,27 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 /* NEWS */
 #news-filters{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto;scrollbar-width:none}
 #news-filters::-webkit-scrollbar{display:none}
-.news-filter{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;white-space:nowrap;flex-shrink:0}
+.news-filter{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid var(--border);background:var(--bg3);color:var(--text2);cursor:pointer;white-space:nowrap;flex-shrink:0}
 .news-filter.active{background:var(--green-dim);color:var(--green);border-color:var(--green)}
-.news-card{padding:10px;margin-bottom:8px;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg2)}
-.news-source{font-size:10px;color:var(--text3);margin-bottom:4px}
+.news-filter-count{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:rgba(255,23,68,.18);color:var(--red);font-size:10px;font-weight:800}
+.news-filter.active .news-filter-count{background:rgba(0,230,118,.16);color:var(--green)}
+.news-card{padding:10px;margin-bottom:8px;border-radius:var(--radius);border:1px solid rgba(255,215,0,.18);background:linear-gradient(180deg,rgba(255,215,0,.04),var(--bg2))}
+.news-source-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.news-source{font-size:10px;color:var(--text3);margin-bottom:0}
+.news-time{font-size:10px;color:var(--text3);white-space:nowrap}
 .news-title{font-size:12px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:4px}
 .news-desc{font-size:11px;color:var(--text2);line-height:1.3;margin-bottom:6px}
+.news-card-footer{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+.news-tags{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.news-tag{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:700;border:1px solid var(--border);background:var(--bg3);color:var(--text2)}
+.news-tag.asset{color:var(--gold);border-color:rgba(255,215,0,.25)}
+.news-tag.impact.high,.news-tag.sentiment.negative{color:var(--red);border-color:rgba(255,23,68,.3);background:rgba(255,23,68,.12)}
+.news-tag.impact.medium{color:var(--gold);border-color:rgba(255,215,0,.24);background:rgba(255,215,0,.08)}
+.news-tag.impact.low,.news-tag.sentiment.neutral{color:var(--text2)}
+.news-tag.sentiment.positive{color:var(--green);border-color:rgba(0,230,118,.32);background:rgba(0,230,118,.12)}
+.news-actions{display:flex;align-items:center;justify-content:flex-end;flex-shrink:0}
+.news-link{color:var(--blue);font-size:11px;font-weight:700;text-decoration:none}
+.news-link.disabled{color:var(--text3);cursor:default}
 .news-sentiment{padding:8px;border-radius:6px;font-size:11px;line-height:1.4}
 .news-sentiment.negative{background:rgba(255,23,68,.12);border:1px solid rgba(255,23,68,.3);color:var(--red)}
 .news-sentiment.positive{background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.3);color:var(--green)}
@@ -133,4 +148,7 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 @media(max-width:400px){
   .app-title{max-width:120px;font-size:11px}
   .tf-card{min-width:46px;padding:4px}
+  #symbol-select{max-width:112px}
+  .news-card-footer{flex-direction:column;align-items:flex-start}
+  .news-actions{justify-content:flex-start}
 }
