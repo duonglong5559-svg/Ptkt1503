@@ -15,6 +15,7 @@ import { ANALYSIS_TIMEFRAMES } from "./types/symbol";
 
 const TIMEFRAMES = [...ANALYSIS_TIMEFRAMES];
 const CANDLE_LIMIT = 150;
+const LIVE_ANALYSIS_THROTTLE_MS = 1200;
 
 let currentSymbol = "BTCUSDT";
 let selectedTf = "1h";
@@ -31,6 +32,12 @@ let priceLines: any[] = [];
 let lastPayload: UIPayload | null = null;
 let currentPrice = 0;
 let chartCandleCache: Candle[] = [];
+let lastLiveAnalysisAt = 0;
+
+type TrendlineListItem = {
+  timeframe: string;
+  trendline: Trendline;
+};
 
 // ── Bootstrap ───────────────────────────────────────────────
 async function init() {
@@ -54,6 +61,7 @@ async function loadSymbol(symbol: string) {
     pipeline = new Pipeline(symbol);
     candleManager = new CandleStateManager();
     chartCandleCache = [];
+    lastLiveAnalysisAt = 0;
 
     healthService.setRestWarmup("loading");
     updateHealthIndicator();
@@ -254,6 +262,9 @@ function renderEntryLines(signal: TradingSignal) {
     add(signal.entryLong, "#26a69a", LineStyle.Dashed, `Buy ${signal.entryLong?.toFixed(2)}`);
   } else if (signal.direction === "short") {
     add(signal.entryShort, "#ef5350", LineStyle.Dashed, `Sell ${signal.entryShort?.toFixed(2)}`);
+  } else {
+    add(signal.entryLong, "rgba(38,166,154,0.85)", LineStyle.Dashed, `Long ${signal.entryLong?.toFixed(2)}`);
+    add(signal.entryShort, "rgba(239,83,80,0.85)", LineStyle.Dashed, `Short ${signal.entryShort?.toFixed(2)}`);
   }
   add(signal.target, "#ffd700", LineStyle.Dotted, "Target");
   if (signal.direction !== "neutral") {
@@ -347,6 +358,23 @@ function startStream() {
       currentPrice = candle.close;
       healthService.recordPriceUpdate();
       updatePriceTag(candle.close);
+
+      const now = Date.now();
+      if (now - lastLiveAnalysisAt >= LIVE_ANALYSIS_THROTTLE_MS) {
+        lastLiveAnalysisAt = now;
+        try {
+          pipeline.setFeedHealth(healthService.getHealth());
+          const payload = pipeline.runTickUpdate(candle.close);
+          if (payload) {
+            lastPayload = payload;
+            currentPrice = payload.currentPrice;
+            updateUI(payload);
+            updateChartAnnotations(payload);
+          }
+        } catch (e: any) {
+          log("Tick analysis error: " + e.message);
+        }
+      }
     }
 
     if (healthService.getHealth().websocket !== "connected") {
@@ -362,6 +390,7 @@ function updateUI(payload: UIPayload) {
   updateSignalBadge(payload.signal.direction, payload.signal.state);
   updateTimeframeCards(payload);
   updateMarquee(payload.signal.summary);
+  updateSignalSnapshot(payload);
   updateSignalSteps();
   updateConfidence();
   updatePriceTag(payload.currentPrice);
@@ -376,20 +405,26 @@ function updateBiasBar(l: number, s: number) {
   document.getElementById("short-fill")!.style.width = `${s}%`;
 }
 
+function getSignalBadgeConfig(dir: string, state: string): { text: string; className: string } {
+  if (state === "cooldown") return { text: "Chờ Cooldown", className: "badge badge-neutral" };
+  if (state === "active_long") return { text: "Đang Long", className: "badge badge-long" };
+  if (state === "active_short") return { text: "Đang Short", className: "badge badge-short" };
+  if (state === "triggered_long") return { text: "Vào Lệnh Long", className: "badge badge-long" };
+  if (state === "triggered_short") return { text: "Vào Lệnh Short", className: "badge badge-short" };
+  if (state === "ready_long") return { text: "Lệnh Chờ Long", className: "badge badge-long" };
+  if (state === "ready_short") return { text: "Lệnh Chờ Short", className: "badge badge-short" };
+  if (state === "watch_long") return { text: "Theo dõi Long", className: "badge badge-long" };
+  if (state === "watch_short") return { text: "Theo dõi Short", className: "badge badge-short" };
+  if (dir === "long") return { text: "Theo dõi Long", className: "badge badge-long" };
+  if (dir === "short") return { text: "Theo dõi Short", className: "badge badge-short" };
+  return { text: "Theo dõi", className: "badge badge-neutral" };
+}
+
 function updateSignalBadge(dir: string, state: string) {
   const b = document.getElementById("signal-badge")!;
-  if (state === "cooldown") { b.textContent = "Chờ Cooldown"; b.className = "badge badge-neutral"; }
-  else if (state === "active_long") { b.textContent = "Đang Long"; b.className = "badge badge-long"; }
-  else if (state === "active_short") { b.textContent = "Đang Short"; b.className = "badge badge-short"; }
-  else if (state === "triggered_long") { b.textContent = "Vào Lệnh Long"; b.className = "badge badge-long"; }
-  else if (state === "triggered_short") { b.textContent = "Vào Lệnh Short"; b.className = "badge badge-short"; }
-  else if (state === "ready_long") { b.textContent = "Lệnh Chờ Long"; b.className = "badge badge-long"; }
-  else if (state === "ready_short") { b.textContent = "Lệnh Chờ Short"; b.className = "badge badge-short"; }
-  else if (state === "watch_long") { b.textContent = "Theo dõi Long"; b.className = "badge badge-long"; }
-  else if (state === "watch_short") { b.textContent = "Theo dõi Short"; b.className = "badge badge-short"; }
-  else if (dir === "long") { b.textContent = "Theo dõi Long"; b.className = "badge badge-long"; }
-  else if (dir === "short") { b.textContent = "Theo dõi Short"; b.className = "badge badge-short"; }
-  else { b.textContent = "Theo dõi"; b.className = "badge badge-neutral"; }
+  const badge = getSignalBadgeConfig(dir, state);
+  b.textContent = badge.text;
+  b.className = badge.className;
 }
 
 function updateTimeframeCards(payload: UIPayload) {
@@ -414,6 +449,85 @@ function updateTimeframeCards(payload: UIPayload) {
 
 function updateMarquee(text: string) {
   document.getElementById("marquee-text")!.textContent = text;
+}
+
+function formatSignalPrice(price?: number): string {
+  return price && price > 0 ? price.toFixed(2) : "---";
+}
+
+function formatDistanceFromPrice(price: number | undefined, referencePrice: number): string {
+  if (!price || !referencePrice || referencePrice <= 0) return "Chờ dữ liệu";
+  const deltaPct = ((price - referencePrice) / referencePrice) * 100;
+  if (Math.abs(deltaPct) < 0.05) return "Sát giá hiện tại";
+  const side = deltaPct > 0 ? "cao hơn" : "thấp hơn";
+  return `${Math.abs(deltaPct).toFixed(2)}% ${side} hiện tại`;
+}
+
+function updateSignalSnapshot(payload: UIPayload) {
+  const c = document.getElementById("signal-snapshot")!;
+  const signal = payload.signal;
+  const badge = getSignalBadgeConfig(signal.direction, signal.state);
+  const directionClass = signal.direction === "long"
+    ? "long"
+    : signal.direction === "short"
+    ? "short"
+    : "neutral";
+  const targetPrice = signal.target ?? signal.takeProfit;
+
+  const metrics = [
+    {
+      label: "Entry Long",
+      value: signal.entryLong,
+      hint: formatDistanceFromPrice(signal.entryLong, payload.currentPrice),
+      tone: "long",
+      active: signal.direction === "long",
+    },
+    {
+      label: "Entry Short",
+      value: signal.entryShort,
+      hint: formatDistanceFromPrice(signal.entryShort, payload.currentPrice),
+      tone: "short",
+      active: signal.direction === "short",
+    },
+    {
+      label: "Target",
+      value: targetPrice,
+      hint: targetPrice ? formatDistanceFromPrice(targetPrice, payload.currentPrice) : "Sẽ xuất hiện khi setup rõ hơn",
+      tone: directionClass,
+      active: signal.direction !== "neutral",
+    },
+    {
+      label: "Stop Loss",
+      value: signal.stopLoss,
+      hint: signal.stopLoss ? formatDistanceFromPrice(signal.stopLoss, payload.currentPrice) : "Chưa kích hoạt",
+      tone: directionClass,
+      active: signal.direction !== "neutral" && signal.stopLoss !== undefined,
+    },
+  ];
+
+  c.innerHTML = `
+    <div class="signal-card ${directionClass}">
+      <div class="signal-card-header">
+        <div>
+          <div class="signal-card-title">Snapshot setup</div>
+          <div class="signal-card-subtitle">${signal.summary}</div>
+        </div>
+        <div class="signal-card-tags">
+          <span class="signal-tag ${directionClass}">${badge.text}</span>
+          <span class="signal-tag neutral">${selectedTf.toUpperCase()}</span>
+        </div>
+      </div>
+      <div class="signal-grid">
+        ${metrics.map((metric) => `
+          <div class="signal-metric${metric.active ? ` active ${metric.tone}` : ""}">
+            <span>${metric.label}</span>
+            <strong>${formatSignalPrice(metric.value)}</strong>
+            <small>${metric.hint}</small>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function updateSignalSteps() {
@@ -463,16 +577,11 @@ function updatePriceTag(price: number) {
 
 function updateTrendlineTab(payload: UIPayload) {
   const c = document.getElementById("trendline-list")!;
-  const all: Trendline[] = [];
-  for (const r of pipeline.getState().timeframeResults.values()) {
-    all.push(...(r as TimeframeAnalysisResult).trendlines.activeTrendlines);
-  }
-
-  const deduped = dedupeTrendlines(all).slice(0, 5);
+  const deduped = dedupeTrendlineItems(collectTrendlineItems()).slice(0, 5);
   document.getElementById("tl-count")!.textContent = String(deduped.length);
 
   if (!deduped.length) { c.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa phát hiện đường xu hướng</div>'; return; }
-  c.innerHTML = deduped.map((t) => {
+  c.innerHTML = deduped.map(({ timeframe, trendline: t }) => {
     const isSup = t.type.includes("support");
     const tierLabel = t.tier === "primary" ? "chính" : "phụ";
     const typeLabel = isSup ? `▲ Hỗ trợ ${tierLabel}` : `▼ Kháng cự ${tierLabel}`;
@@ -480,7 +589,7 @@ function updateTrendlineTab(payload: UIPayload) {
     const proxLabel = proxLabels[t.proximity] || "";
     const interLabel = t.lastInteraction !== "none" ? t.lastInteraction : "";
     const visualColor = t.visualState === "hot" ? "var(--cyan)" : t.visualState === "near" ? "var(--green)" : t.visualState === "break" ? "var(--red)" : "var(--text2)";
-    return `<div class="tl-item"><div><div class="tl-type ${isSup ? "support" : "resistance"}" style="color:${visualColor}">${typeLabel} ~${t.projectedPriceNow.toFixed(2)}</div><div class="tl-info">Touch:${t.touches} ${proxLabel} ${interLabel} ND:${t.normalizedDistance.toFixed(1)}</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
+    return `<div class="tl-item"><div><div class="tl-type ${isSup ? "support" : "resistance"}" style="color:${visualColor}">${typeLabel} ~${t.projectedPriceNow.toFixed(2)}</div><div class="tl-info">TF:${timeframe.toUpperCase()} • Touch:${t.touches} ${proxLabel} ${interLabel} ND:${t.normalizedDistance.toFixed(1)}</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
   }).join("");
 }
 
@@ -499,6 +608,45 @@ function dedupeTrendlines(lines: Trendline[]): Trendline[] {
   return result;
 }
 
+function collectTrendlineItems(): TrendlineListItem[] {
+  const items: TrendlineListItem[] = [];
+  const entries = Array.from(pipeline.getState().timeframeResults.entries()) as [string, TimeframeAnalysisResult][];
+  entries.sort((a, b) => {
+    if (a[0] === selectedTf && b[0] !== selectedTf) return -1;
+    if (a[0] !== selectedTf && b[0] === selectedTf) return 1;
+    return 0;
+  });
+
+  for (const [timeframe, result] of entries) {
+    for (const trendline of result.trendlines.activeTrendlines) {
+      items.push({ timeframe, trendline });
+    }
+  }
+
+  items.sort((a, b) => {
+    if (a.timeframe === selectedTf && b.timeframe !== selectedTf) return -1;
+    if (a.timeframe !== selectedTf && b.timeframe === selectedTf) return 1;
+    if (a.trendline.tier !== b.trendline.tier) return a.trendline.tier === "primary" ? -1 : 1;
+    return b.trendline.strength - a.trendline.strength;
+  });
+  return items;
+}
+
+function dedupeTrendlineItems(items: TrendlineListItem[]): TrendlineListItem[] {
+  const result: TrendlineListItem[] = [];
+  for (const item of items) {
+    const line = item.trendline;
+    const isDuplicate = result.some((existing) =>
+      existing.timeframe === item.timeframe &&
+      existing.trendline.type === line.type &&
+      Math.abs(existing.trendline.points.y1 - line.points.y1) / (existing.trendline.points.y1 || 1) < 0.005 &&
+      Math.abs(existing.trendline.points.y2 - line.points.y2) / (existing.trendline.points.y2 || 1) < 0.005
+    );
+    if (!isDuplicate) result.push(item);
+  }
+  return result;
+}
+
 function updateChartAnnotations(payload: UIPayload) {
   const tf = pipeline?.getState().timeframeResults.get(selectedTf) as TimeframeAnalysisResult | undefined;
   const sig = pipeline?.getState().lastSignal;
@@ -508,11 +656,7 @@ function updateChartAnnotations(payload: UIPayload) {
   }
 
   if (chartCandleCache.length) {
-    const allTrendlines: Trendline[] = [];
-    for (const r of pipeline.getState().timeframeResults.values()) {
-      allTrendlines.push(...(r as TimeframeAnalysisResult).trendlines.activeTrendlines);
-    }
-    const deduped = dedupeTrendlines(allTrendlines).slice(0, 4);
+    const deduped = tf ? dedupeTrendlines([...tf.trendlines.activeTrendlines]).slice(0, 4) : [];
     renderTrendlines(deduped, chartCandleCache);
   }
 

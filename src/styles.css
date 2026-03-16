@@ -87,6 +87,28 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 .step-desc{font-size:11px;color:var(--text2);margin-top:2px}
 @keyframes pulse-border{0%,100%{box-shadow:0 0 0 0 rgba(0,188,212,.3)}50%{box-shadow:0 0 8px 2px rgba(0,188,212,.15)}}
 
+/* SIGNAL SNAPSHOT */
+#signal-snapshot{display:grid;gap:8px;margin-top:8px}
+.signal-card{padding:12px;border-radius:var(--radius);border:1px solid var(--border);background:linear-gradient(135deg,var(--bg3),var(--bg2))}
+.signal-card.long{border-color:rgba(0,230,118,.28);box-shadow:0 0 0 1px rgba(0,230,118,.08) inset}
+.signal-card.short{border-color:rgba(255,23,68,.28);box-shadow:0 0 0 1px rgba(255,23,68,.08) inset}
+.signal-card.neutral{border-color:rgba(0,188,212,.25);box-shadow:0 0 0 1px rgba(0,188,212,.08) inset}
+.signal-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.signal-card-title{font-size:13px;font-weight:800;color:var(--text)}
+.signal-card-subtitle{font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4}
+.signal-card-tags{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
+.signal-tag{padding:3px 8px;border-radius:999px;border:1px solid var(--border);font-size:10px;font-weight:700}
+.signal-tag.long{color:var(--green);border-color:rgba(0,230,118,.35);background:rgba(0,230,118,.12)}
+.signal-tag.short{color:var(--red);border-color:rgba(255,23,68,.35);background:rgba(255,23,68,.12)}
+.signal-tag.neutral{color:var(--cyan);border-color:rgba(0,188,212,.35);background:rgba(0,188,212,.12)}
+.signal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+.signal-metric{padding:9px 10px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.02)}
+.signal-metric.active.long{border-color:rgba(0,230,118,.3);background:rgba(0,230,118,.08)}
+.signal-metric.active.short{border-color:rgba(255,23,68,.3);background:rgba(255,23,68,.08)}
+.signal-metric span{display:block;font-size:10px;color:var(--text2);margin-bottom:4px}
+.signal-metric strong{display:block;font-size:15px;font-weight:800;color:var(--text)}
+.signal-metric small{display:block;font-size:10px;color:var(--text3);margin-top:3px}
+
 /* CONFIDENCE */
 #confidence-bar{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;margin-top:6px;border-radius:var(--radius);background:linear-gradient(135deg,var(--bg3),var(--bg2));border:1px solid var(--border)}
 #confidence-bar span:first-child{font-size:12px;color:var(--text2);font-weight:500}
@@ -133,4 +155,5 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 @media(max-width:400px){
   .app-title{max-width:120px;font-size:11px}
   .tf-card{min-width:46px;padding:4px}
+  .signal-grid{grid-template-columns:1fr}
 }

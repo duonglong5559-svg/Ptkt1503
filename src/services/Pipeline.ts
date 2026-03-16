@@ -176,20 +176,13 @@ export class Pipeline {
   }
 
   runTickUpdate(currentPrice: number): UIPayload | null {
-    if (!this.state.lastScores || !this.state.lastSignal) return null;
+    if (!this.state.lastScores || !this.state.lastSignal || this.state.timeframeResults.size === 0) {
+      return null;
+    }
 
-    const primaryTf = this.getPrimaryTimeframe();
-    const primaryResult = this.state.timeframeResults.get(primaryTf);
-    if (!primaryResult) return null;
-
-    const pivotRelation = this.recomputePivotForPrice(primaryResult, currentPrice);
-
-    return this.buildUIPayload(
-      currentPrice,
-      this.state.lastScores,
-      this.state.lastSignal,
-      pivotRelation
-    );
+    // Re-run the analysis against the latest in-flight candles so the UI keeps
+    // updating entries/trend proximity before the current candle is closed.
+    return this.runFullAnalysis(currentPrice);
   }
 
   private recomputePivotForPrice(result: TimeframeAnalysisResult, currentPrice: number): PivotRelation {
