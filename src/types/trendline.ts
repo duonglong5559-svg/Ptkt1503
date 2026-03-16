@@ -8,6 +8,10 @@ export type TrendlineInteraction =
   | "break"
   | "retest";
 
+export type TrendlineProximity = "far" | "near" | "approaching" | "touch_zone" | "reaction_zone";
+export type TrendlineVisualState = "dim" | "near" | "hot" | "break" | "retest";
+export type TrendlineTier = "primary" | "secondary";
+
 export type Trendline = {
   id: string;
   type: TrendlineType;
@@ -20,6 +24,11 @@ export type Trendline = {
   lastInteraction: TrendlineInteraction;
   distanceToPrice: number;
   distanceToPricePercent: number;
+  projectedPriceNow: number;
+  normalizedDistance: number;
+  proximity: TrendlineProximity;
+  visualState: TrendlineVisualState;
+  tier: TrendlineTier;
   validUntilIndex?: number;
   createdAt: number;
 };
@@ -31,6 +40,7 @@ export type TrendlineEngineInput = {
   swings: import("./swing").SwingPoint[];
   currentPrice: number;
   currentIndex: number;
+  atr?: number;
 };
 
 export type TrendlineEngineOutput = {
@@ -40,6 +50,8 @@ export type TrendlineEngineOutput = {
   nearbyTrendlines: Trendline[];
   trendlineCount: number;
   trendlineBias: "bullish" | "bearish" | "neutral";
+  primarySupport?: Trendline;
+  primaryResistance?: Trendline;
   summary: string;
   updatedAt: number;
 };

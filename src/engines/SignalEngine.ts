@@ -129,17 +129,18 @@ export class SignalEngine {
       pivotSupportsBullish;
 
     const hasResistanceNearby = trendlineOutput.activeTrendlines.some(
-      (t) =>
-        (t.type === "descending_resistance" || t.type === "horizontal_resistance") &&
-        !t.isBroken &&
-        t.distanceToPricePercent < 1.0
+      (t) => t.type.includes("resistance") && !t.isBroken && t.normalizedDistance <= 1.2
     );
 
     const hasSupportNearby = trendlineOutput.activeTrendlines.some(
-      (t) =>
-        (t.type === "ascending_support" || t.type === "horizontal_support") &&
-        !t.isBroken &&
-        t.distanceToPricePercent < 1.0
+      (t) => t.type.includes("support") && !t.isBroken && t.normalizedDistance <= 1.2
+    );
+
+    const supportInTouchZone = trendlineOutput.activeTrendlines.some(
+      (t) => t.type.includes("support") && !t.isBroken && (t.proximity === "touch_zone" || t.proximity === "reaction_zone")
+    );
+    const resistanceInTouchZone = trendlineOutput.activeTrendlines.some(
+      (t) => t.type.includes("resistance") && !t.isBroken && (t.proximity === "touch_zone" || t.proximity === "reaction_zone")
     );
 
     if (prev && canWatchShort && globalShortPercent >= READY_THRESHOLD) {
@@ -171,28 +172,14 @@ export class SignalEngine {
     }
 
     if (canWatchShort && globalShortPercent >= READY_THRESHOLD) {
-      if (hasResistanceNearby || input.nearestResistance !== undefined) {
-        const resistDist = input.nearestResistance
-          ? Math.abs(currentPrice - input.nearestResistance)
-          : Infinity;
-        const atrVal = atr || Infinity;
-        if (resistDist < atrVal * 1.5 || hasResistanceNearby) {
-          return "ready_short";
-        }
-      }
+      if (resistanceInTouchZone) return "ready_short";
+      if (hasResistanceNearby) return "watch_short";
       return "watch_short";
     }
 
     if (canWatchLong && globalLongPercent >= READY_THRESHOLD) {
-      if (hasSupportNearby || input.nearestSupport !== undefined) {
-        const supDist = input.nearestSupport
-          ? Math.abs(currentPrice - input.nearestSupport)
-          : Infinity;
-        const atrVal = atr || Infinity;
-        if (supDist < atrVal * 1.5 || hasSupportNearby) {
-          return "ready_long";
-        }
-      }
+      if (supportInTouchZone) return "ready_long";
+      if (hasSupportNearby) return "watch_long";
       return "watch_long";
     }
 
@@ -226,81 +213,52 @@ export class SignalEngine {
   }
 
   private computeEntryLong(input: SignalEngineInput): number | undefined {
-    const { currentPrice, nearestSupport, pivotRelation, atr } = input;
+    const { currentPrice, nearestSupport, pivotRelation, atr, trendlineOutput } = input;
+    const effectiveAtr = atr || currentPrice * 0.005;
+
+    const primarySup = trendlineOutput.primarySupport;
+    if (primarySup && primarySup.projectedPriceNow > 0 && primarySup.projectedPriceNow < currentPrice) {
+      return Math.round(primarySup.projectedPriceNow * 100) / 100;
+    }
 
     const candidates: number[] = [];
-
-    if (nearestSupport) {
-      candidates.push(nearestSupport);
+    if (nearestSupport && nearestSupport < currentPrice) candidates.push(nearestSupport);
+    if (pivotRelation.state === "below_pivot" && pivotRelation.levels.s1 < currentPrice) {
+      candidates.push(pivotRelation.levels.s1);
     }
 
-    if (pivotRelation.state === "below_pivot") {
-      const pullbackEntry = pivotRelation.levels.s1;
-      if (pullbackEntry < currentPrice) {
-        candidates.push(pullbackEntry);
-      }
-    }
-
-    const supportTL = input.trendlineOutput.activeTrendlines.find(
-      (t) =>
-        (t.type === "ascending_support" || t.type === "horizontal_support") &&
-        !t.isBroken &&
-        t.distanceToPrice > 0 &&
-        t.distanceToPricePercent < 2
+    const nearTL = trendlineOutput.activeTrendlines.find(
+      (t) => t.type.includes("support") && !t.isBroken && t.projectedPriceNow > 0 && t.projectedPriceNow < currentPrice && t.normalizedDistance < 2
     );
-    if (supportTL) {
-      const projIdx = supportTL.points.x2 + 5;
-      const projected = supportTL.slope * projIdx + supportTL.intercept;
-      if (projected > 0 && projected < currentPrice) {
-        candidates.push(Math.round(projected * 100) / 100);
-      }
-    }
+    if (nearTL) candidates.push(nearTL.projectedPriceNow);
 
-    if (candidates.length === 0) {
-      const offset = (atr || currentPrice * 0.005) * 0.8;
-      return Math.round((currentPrice - offset) * 100) / 100;
-    }
-
+    if (candidates.length === 0) return Math.round((currentPrice - effectiveAtr * 0.8) * 100) / 100;
     candidates.sort((a, b) => b - a);
     return Math.round(candidates[0] * 100) / 100;
   }
 
   private computeEntryShort(input: SignalEngineInput): number | undefined {
-    const { currentPrice, nearestResistance, pivotRelation, atr } = input;
+    const { currentPrice, nearestResistance, pivotRelation, atr, trendlineOutput } = input;
+    const effectiveAtr = atr || currentPrice * 0.005;
+
+    const primaryRes = trendlineOutput.primaryResistance;
+    if (primaryRes && primaryRes.projectedPriceNow > 0 && primaryRes.projectedPriceNow > currentPrice) {
+      return Math.round(primaryRes.projectedPriceNow * 100) / 100;
+    }
 
     const candidates: number[] = [];
-
-    if (nearestResistance) {
-      candidates.push(nearestResistance);
-    }
-
-    if (pivotRelation.state === "above_pivot" || pivotRelation.state === "approaching_pivot_from_below") {
+    if (nearestResistance && nearestResistance > currentPrice) candidates.push(nearestResistance);
+    if (pivotRelation.levels.r1 > currentPrice) candidates.push(pivotRelation.levels.r1);
+    if ((pivotRelation.state === "above_pivot" || pivotRelation.state === "approaching_pivot_from_below") && pivotRelation.levels.pivot > currentPrice) {
       candidates.push(pivotRelation.levels.pivot);
     }
-    if (pivotRelation.levels.r1 > currentPrice) {
-      candidates.push(pivotRelation.levels.r1);
-    }
 
-    const resistTL = input.trendlineOutput.activeTrendlines.find(
-      (t) =>
-        (t.type === "descending_resistance" || t.type === "horizontal_resistance") &&
-        !t.isBroken &&
-        t.distanceToPrice > 0 &&
-        t.distanceToPricePercent < 2
+    const nearTL = trendlineOutput.activeTrendlines.find(
+      (t) => t.type.includes("resistance") && !t.isBroken && t.projectedPriceNow > currentPrice && t.normalizedDistance < 2
     );
-    if (resistTL) {
-      const projIdx = resistTL.points.x2 + 5;
-      const projected = resistTL.slope * projIdx + resistTL.intercept;
-      if (projected > currentPrice) {
-        candidates.push(Math.round(projected * 100) / 100);
-      }
-    }
+    if (nearTL) candidates.push(nearTL.projectedPriceNow);
 
-    if (candidates.length === 0) {
-      const offset = (atr || currentPrice * 0.005) * 0.8;
-      return Math.round((currentPrice + offset) * 100) / 100;
-    }
-
+    if (candidates.length === 0) return Math.round((currentPrice + effectiveAtr * 0.8) * 100) / 100;
     candidates.sort((a, b) => a - b);
     return Math.round(candidates[0] * 100) / 100;
   }

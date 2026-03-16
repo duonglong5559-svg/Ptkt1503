@@ -261,6 +261,17 @@ function renderEntryLines(signal: TradingSignal) {
   }
 }
 
+function getTrendlineStyle(tl: Trendline): { color: string; width: number } {
+  const isSup = tl.type.includes("support");
+  const vs = tl.visualState;
+
+  if (vs === "hot") return { color: isSup ? "rgba(0,255,200,0.95)" : "rgba(255,50,100,0.95)", width: 3 };
+  if (vs === "near") return { color: isSup ? "rgba(0,200,160,0.75)" : "rgba(220,80,120,0.75)", width: 2 };
+  if (vs === "break") return { color: isSup ? "rgba(255,120,50,0.85)" : "rgba(50,200,180,0.85)", width: 2 };
+  if (vs === "retest") return { color: isSup ? "rgba(0,220,180,0.8)" : "rgba(220,60,100,0.8)", width: 2 };
+  return { color: "rgba(150,150,150,0.4)", width: 1 };
+}
+
 function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
   if (!chart) return;
   for (const s of trendlineSeriesList) { try { chart.removeSeries(s); } catch {} }
@@ -268,15 +279,15 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
   const closed = candles.filter((c) => c.isClosed);
   if (closed.length === 0 || trendlines.length === 0) return;
 
-  for (const tl of trendlines.slice(0, 5)) {
-    const color = "rgba(180,180,180,0.7)";
+  for (const tl of trendlines.slice(0, 4)) {
+    const { color, width } = getTrendlineStyle(tl);
 
     const i1 = Math.max(0, Math.min(tl.points.x1, closed.length - 1));
     const i2 = Math.max(0, Math.min(tl.points.x2, closed.length - 1));
     if (i1 === i2) continue;
 
     const series = chart.addSeries(LineSeries, {
-      color, lineWidth: 2, lineStyle: LineStyle.Solid,
+      color, lineWidth: width, lineStyle: tl.tier === "primary" ? LineStyle.Solid : LineStyle.Dashed,
       crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
     });
 
@@ -285,12 +296,10 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
       { time: (closed[i2].openTime / 1000) as UTCTimestamp, value: tl.points.y2 },
     ];
 
-    const extIdx = Math.min(i2 + 20, closed.length - 1);
+    const extIdx = Math.min(i2 + 25, closed.length - 1);
     if (extIdx > i2) {
       const extPrice = tl.slope * extIdx + tl.intercept;
-      if (extPrice > 0) {
-        data.push({ time: (closed[extIdx].openTime / 1000) as UTCTimestamp, value: extPrice });
-      }
+      if (extPrice > 0) data.push({ time: (closed[extIdx].openTime / 1000) as UTCTimestamp, value: extPrice });
     }
 
     series.setData(data);
@@ -465,11 +474,13 @@ function updateTrendlineTab(payload: UIPayload) {
   if (!deduped.length) { c.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Chưa phát hiện đường xu hướng</div>'; return; }
   c.innerHTML = deduped.map((t) => {
     const isSup = t.type.includes("support");
+    const tierLabel = t.tier === "primary" ? "chính" : "phụ";
+    const typeLabel = isSup ? `▲ Hỗ trợ ${tierLabel}` : `▼ Kháng cự ${tierLabel}`;
+    const proxLabels: Record<string, string> = { far: "", near: "gần", approaching: "tiến gần", touch_zone: "chạm", reaction_zone: "phản ứng" };
+    const proxLabel = proxLabels[t.proximity] || "";
     const interLabel = t.lastInteraction !== "none" ? t.lastInteraction : "";
-    const projIdx = t.points.x2 + 5;
-    const projPrice = (t.slope * projIdx + t.intercept).toFixed(2);
-    const typeLabel = t.type === "ascending_support" ? "▲ Hỗ trợ tăng" : t.type === "descending_resistance" ? "▼ Kháng cự giảm" : isSup ? "▲ Hỗ trợ" : "▼ Kháng cự";
-    return `<div class="tl-item"><div><div class="tl-type ${isSup ? "support" : "resistance"}">${typeLabel} ~${projPrice}</div><div class="tl-info">Touch:${t.touches} ${interLabel} ${t.distanceToPricePercent.toFixed(1)}%</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
+    const visualColor = t.visualState === "hot" ? "var(--cyan)" : t.visualState === "near" ? "var(--green)" : t.visualState === "break" ? "var(--red)" : "var(--text2)";
+    return `<div class="tl-item"><div><div class="tl-type ${isSup ? "support" : "resistance"}" style="color:${visualColor}">${typeLabel} ~${t.projectedPriceNow.toFixed(2)}</div><div class="tl-info">Touch:${t.touches} ${proxLabel} ${interLabel} ND:${t.normalizedDistance.toFixed(1)}</div></div><div class="tl-strength" style="color:${t.strength >= 60 ? "var(--green)" : "var(--gold)"}">${t.strength}</div></div>`;
   }).join("");
 }
 

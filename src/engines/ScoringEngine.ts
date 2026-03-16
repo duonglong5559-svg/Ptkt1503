@@ -190,43 +190,33 @@ export class ScoringEngine {
   ): void {
     for (const line of tl.activeTrendlines) {
       const w = line.strength / 100;
-      const isSup = line.type === "ascending_support" || line.type === "horizontal_support";
-      const isRes = line.type === "descending_resistance" || line.type === "horizontal_resistance";
+      const tierMult = line.tier === "primary" ? 1.5 : 1.0;
+      const proxMult = line.proximity === "reaction_zone" ? 2.0
+        : line.proximity === "touch_zone" ? 1.6
+        : line.proximity === "approaching" ? 1.2
+        : line.proximity === "near" ? 1.0
+        : 0.6;
+      const isSup = line.type.includes("support");
+      const isRes = line.type.includes("resistance");
 
       if (isSup && !line.isBroken) {
-        if (line.lastInteraction === "bounce") {
-          long.trendline += Math.round(15 * w);
-        } else if (line.lastInteraction === "approaching") {
-          long.trendline += Math.round(8 * w);
-        } else {
-          long.trendline += Math.round(5 * w);
-        }
+        const base = line.lastInteraction === "bounce" ? 18 : line.lastInteraction === "touch" ? 14 : line.lastInteraction === "approaching" ? 10 : 5;
+        long.trendline += Math.round(base * w * tierMult * proxMult);
       }
 
       if (isRes && !line.isBroken) {
-        if (line.lastInteraction === "bounce") {
-          short.trendline += Math.round(15 * w);
-        } else if (line.lastInteraction === "approaching") {
-          short.trendline += Math.round(8 * w);
-        } else {
-          short.trendline += Math.round(5 * w);
-        }
+        const base = line.lastInteraction === "bounce" ? 18 : line.lastInteraction === "touch" ? 14 : line.lastInteraction === "approaching" ? 10 : 5;
+        short.trendline += Math.round(base * w * tierMult * proxMult);
       }
 
       if (isSup && line.isBroken) {
-        if (line.lastInteraction === "retest") {
-          short.trendline += Math.round(18 * w);
-        } else {
-          short.trendline += Math.round(10 * w);
-        }
+        const base = line.lastInteraction === "retest" ? 20 : 10;
+        short.trendline += Math.round(base * w * tierMult);
       }
 
       if (isRes && line.isBroken) {
-        if (line.lastInteraction === "retest") {
-          long.trendline += Math.round(18 * w);
-        } else {
-          long.trendline += Math.round(10 * w);
-        }
+        const base = line.lastInteraction === "retest" ? 20 : 10;
+        long.trendline += Math.round(base * w * tierMult);
       }
     }
   }

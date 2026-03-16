@@ -284,6 +284,7 @@ export class Pipeline {
       swings: swings.allSwings,
       currentPrice,
       currentIndex,
+      atr,
     });
 
     const score = this.scoringEngine.scoreTimeframe({
