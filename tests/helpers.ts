@@ -84,3 +84,40 @@ export function generateRangeCandles(
   }
   return candles;
 }
+
+export function generateSwingTrendCandles(
+  pivots: number[],
+  candlesPerLeg: number = 3
+): Candle[] {
+  const candles: Candle[] = [];
+  if (pivots.length < 2) return candles;
+
+  let lastClose = pivots[0];
+  let time = Date.now() - pivots.length * candlesPerLeg * 3600000;
+
+  for (let leg = 0; leg < pivots.length - 1; leg++) {
+    const start = pivots[leg];
+    const end = pivots[leg + 1];
+
+    for (let step = 1; step <= candlesPerLeg; step++) {
+      const close = start + ((end - start) * step) / candlesPerLeg;
+      const open = lastClose;
+      const high = Math.max(open, close) + 1.2;
+      const low = Math.min(open, close) - 1.2;
+      candles.push(
+        makeCandle({
+          open,
+          high,
+          low,
+          close,
+          openTime: time,
+          closeTime: time + 3600000,
+        })
+      );
+      lastClose = close;
+      time += 3600000;
+    }
+  }
+
+  return candles;
+}

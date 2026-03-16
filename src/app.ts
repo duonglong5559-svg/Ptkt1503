@@ -321,8 +321,11 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
   for (const tl of trendlines.slice(0, 4)) {
     const { color, width } = getTrendlineStyle(tl);
 
-    const i1 = Math.max(0, Math.min(tl.points.x1, closed.length - 1));
-    const i2 = Math.max(0, Math.min(tl.points.x2, closed.length - 1));
+    if (tl.points.x1 < 0 || tl.points.x2 < 0 || tl.points.x1 >= closed.length || tl.points.x2 >= closed.length) {
+      continue;
+    }
+    const i1 = tl.points.x1;
+    const i2 = tl.points.x2;
     if (i1 === i2) continue;
 
     const series = chart.addSeries(LineSeries, {
@@ -335,7 +338,7 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
       { time: (closed[i2].openTime / 1000) as UTCTimestamp, value: tl.points.y2 },
     ];
 
-    const extIdx = Math.min(i2 + 25, closed.length - 1);
+    const extIdx = closed.length - 1;
     if (extIdx > i2) {
       const extPrice = tl.slope * extIdx + tl.intercept;
       if (extPrice > 0) data.push({ time: (closed[extIdx].openTime / 1000) as UTCTimestamp, value: extPrice });

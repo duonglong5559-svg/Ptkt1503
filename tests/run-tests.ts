@@ -2,6 +2,7 @@ import { testPatternEngine } from "./PatternEngine.test";
 import { testPivotEngine } from "./PivotEngine.test";
 import { testSwingEngine } from "./SwingEngine.test";
 import { testTrendlineEngine } from "./TrendlineEngine.test";
+import { testStructureEngine } from "./StructureEngine.test";
 import { testScoringEngine } from "./ScoringEngine.test";
 import { testSignalEngine } from "./SignalEngine.test";
 import { testPipeline } from "./Pipeline.test";
@@ -37,6 +38,9 @@ async function run() {
 
   console.log("\n▸ TrendlineEngine");
   testTrendlineEngine(assert);
+
+  console.log("\n▸ StructureEngine");
+  testStructureEngine(assert);
 
   console.log("\n▸ ScoringEngine");
   testScoringEngine(assert);

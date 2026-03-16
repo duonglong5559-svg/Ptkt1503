@@ -215,6 +215,8 @@ export class Pipeline {
     candles: Candle[],
     currentPrice: number
   ): TimeframeAnalysisResult {
+    const closedCandles = candles.filter((c) => c.isClosed);
+    const trendlineCandles = closedCandles.length > 0 ? closedCandles : candles;
     const atr = computeATR(candles);
     const volScore = computeVolatilityScore(atr, currentPrice);
     const momScore = computeMomentumScore(candles);
@@ -273,10 +275,10 @@ export class Pipeline {
     const trendlines = this.trendlineEngine.analyze({
       symbol: this.state.symbol,
       timeframe: tf,
-      candles,
+      candles: trendlineCandles,
       swings: swings.allSwings,
       currentPrice,
-      currentIndex,
+      currentIndex: trendlineCandles.length - 1,
       atr,
     });
 

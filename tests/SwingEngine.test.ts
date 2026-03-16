@@ -1,5 +1,5 @@
 import { SwingEngine } from "../src/engines/SwingEngine";
-import { makeCandle, AssertFn } from "./helpers";
+import { makeCandle, generateSwingTrendCandles, AssertFn } from "./helpers";
 import { Candle } from "../src/types";
 
 export function testSwingEngine(assert: AssertFn) {
@@ -109,5 +109,45 @@ export function testSwingEngine(assert: AssertFn) {
         `Swing at index ${sw.index} has valid strength (${sw.strength})`
       );
     }
+  }
+
+  // Test: forming candle does not create extra swings
+  {
+    const closedCandles = generateSwingTrendCandles([100, 112, 103, 116, 106, 120, 109], 3);
+    const forming = makeCandle({
+      open: 109,
+      high: 125,
+      low: 104,
+      close: 123,
+      openTime: closedCandles[closedCandles.length - 1].closeTime,
+      closeTime: closedCandles[closedCandles.length - 1].closeTime + 3600000,
+      isClosed: false,
+    });
+
+    const closedOnly = engine.analyze({
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      candles: closedCandles,
+      lookback: 2,
+    });
+    const withForming = engine.analyze({
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      candles: [...closedCandles, forming],
+      lookback: 2,
+    });
+
+    assert(
+      withForming.allSwings.length === closedOnly.allSwings.length,
+      "Forming candle does not add new swing points"
+    );
+    assert(
+      withForming.latestSwingHigh?.index === closedOnly.latestSwingHigh?.index,
+      "Latest swing high ignores forming candle"
+    );
+    assert(
+      withForming.latestSwingLow?.index === closedOnly.latestSwingLow?.index,
+      "Latest swing low ignores forming candle"
+    );
   }
 }

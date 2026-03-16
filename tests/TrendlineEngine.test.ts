@@ -1,18 +1,19 @@
 import { TrendlineEngine } from "../src/engines/TrendlineEngine";
 import { SwingEngine } from "../src/engines/SwingEngine";
-import { makeCandle, generateTrendCandles, AssertFn } from "./helpers";
+import { generateSwingTrendCandles, AssertFn } from "./helpers";
 
 export function testTrendlineEngine(assert: AssertFn) {
   const trendlineEngine = new TrendlineEngine();
   const swingEngine = new SwingEngine();
 
-  // Test: ascending trendlines in uptrend
+  // Test: ascending support is detected from higher lows
   {
-    const candles = generateTrendCandles("up", 30, 100, 1.5);
+    const candles = generateSwingTrendCandles([100, 114, 104, 118, 108, 122, 112, 126, 116, 130], 3);
     const swings = swingEngine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
       candles,
+      lookback: 2,
     });
 
     const result = trendlineEngine.analyze({
@@ -22,20 +23,29 @@ export function testTrendlineEngine(assert: AssertFn) {
       swings: swings.allSwings,
       currentPrice: candles[candles.length - 1].close,
       currentIndex: candles.length - 1,
+      atr: 4,
     });
 
-    assert(result.trendlineCount >= 0, "Trendline analysis runs without error");
-    assert(result.trendlineBias !== undefined, "Trendline bias is defined");
-    assert(result.summary.length > 0, "Summary is non-empty");
+    assert(
+      result.activeTrendlines.some((line) => line.type === "ascending_support"),
+      "Detects ascending support in uptrend swings"
+    );
+    assert(result.primarySupport?.type === "ascending_support", "Primary support selected");
+    assert(
+      (result.primarySupport?.projectedPriceNow || 0) < candles[candles.length - 1].close,
+      "Primary support remains below current price"
+    );
+    assert((result.primarySupport?.touches || 0) >= 3, "Primary support has repeated swing touches");
   }
 
-  // Test: descending trendlines in downtrend
+  // Test: descending resistance is detected from lower highs
   {
-    const candles = generateTrendCandles("down", 30, 150, 1.5);
+    const candles = generateSwingTrendCandles([130, 116, 126, 112, 122, 108, 118, 104, 114, 100], 3);
     const swings = swingEngine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
       candles,
+      lookback: 2,
     });
 
     const result = trendlineEngine.analyze({
@@ -45,9 +55,18 @@ export function testTrendlineEngine(assert: AssertFn) {
       swings: swings.allSwings,
       currentPrice: candles[candles.length - 1].close,
       currentIndex: candles.length - 1,
+      atr: 4,
     });
 
-    assert(result.trendlineCount >= 0, "Downtrend trendline analysis works");
+    assert(
+      result.activeTrendlines.some((line) => line.type === "descending_resistance"),
+      "Detects descending resistance in downtrend swings"
+    );
+    assert(result.primaryResistance?.type === "descending_resistance", "Primary resistance selected");
+    assert(
+      (result.primaryResistance?.projectedPriceNow || 0) > candles[candles.length - 1].close,
+      "Primary resistance remains above current price"
+    );
   }
 
   // Test: empty swings
@@ -66,7 +85,7 @@ export function testTrendlineEngine(assert: AssertFn) {
 
   // Test: max active lines limited
   {
-    const candles = generateTrendCandles("up", 50, 100, 0.8);
+    const candles = generateSwingTrendCandles([100, 114, 104, 118, 108, 122, 112, 126, 116, 130, 120, 134], 3);
     const swings = swingEngine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
@@ -84,38 +103,47 @@ export function testTrendlineEngine(assert: AssertFn) {
     });
 
     assert(
-      result.activeTrendlines.length <= 5,
+      result.activeTrendlines.length <= 4,
       `Active trendlines limited (got ${result.activeTrendlines.length})`
     );
   }
 
-  // Test: trendline strength scoring
+  // Test: intrabar move should not mark support as broken before candle close
   {
-    const candles = generateTrendCandles("up", 40, 100, 1);
+    const candles = generateSwingTrendCandles([100, 114, 104, 118, 108, 122, 112, 126, 116, 130], 3);
     const swings = swingEngine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
       candles,
+      lookback: 2,
     });
 
-    const result = trendlineEngine.analyze({
+    const base = trendlineEngine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
       candles,
       swings: swings.allSwings,
       currentPrice: candles[candles.length - 1].close,
       currentIndex: candles.length - 1,
+      atr: 4,
     });
 
-    for (const line of result.activeTrendlines) {
-      assert(
-        line.strength >= 0 && line.strength <= 100,
-        `Trendline strength valid: ${line.strength}`
-      );
-      assert(
-        line.touches >= 2,
-        `Trendline has at least 2 touches: ${line.touches}`
-      );
-    }
+    const support = base.primarySupport;
+    const intrabarBreakPrice = (support?.projectedPriceNow || candles[candles.length - 1].close) - 6;
+    const result = trendlineEngine.analyze({
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      candles,
+      swings: swings.allSwings,
+      currentPrice: intrabarBreakPrice,
+      currentIndex: candles.length - 1,
+      atr: 4,
+    });
+
+    assert(!!support, "Primary support exists for intrabar break test");
+    assert(
+      result.primarySupport?.isBroken === false,
+      "Support is not confirmed broken by intrabar price only"
+    );
   }
 }
