@@ -1,10 +1,19 @@
 import { NewsItem, SentimentLabel, NewsImpact } from "../types/news";
 
 const CRYPTO_COMPARE_URL = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN&sortOrder=latest";
+const RSS_PROXY = "https://api.allorigins.win/raw?url=";
 const FETCH_TIMEOUT = 10000;
+const MAX_NEWS_ITEMS = 18;
 
 const POSITIVE_KEYWORDS = ["bull", "surge", "rally", "gain", "rise", "growth", "recover", "pump", "breakout", "upgrade", "adoption"];
 const NEGATIVE_KEYWORDS = ["bear", "crash", "drop", "fall", "decline", "loss", "dump", "fear", "risk", "warn", "plunge", "hack", "ban"];
+
+const RSS_SOURCES = [
+  { channel: "CoinDesk", url: "https://www.coindesk.com/arc/outboundfeeds/rss/" },
+  { channel: "Cointelegraph", url: "https://cointelegraph.com/rss" },
+  { channel: "AMBCrypto", url: "https://ambcrypto.com/feed/" },
+  { channel: "crypto.news", url: "https://crypto.news/feed/" },
+];
 
 function mapAsset(text: string): NewsItem["asset"] {
   const lower = text.toLowerCase();
@@ -38,6 +47,35 @@ function estimateImpact(title: string): NewsImpact {
   return "low";
 }
 
+function stripHtml(html: string): string {
+  return (html || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function dedupeNewsItems(items: NewsItem[]): NewsItem[] {
+  const deduped: NewsItem[] = [];
+  for (const item of items) {
+    const normalized = normalizeTitle(item.title);
+    const exists = deduped.some((existing) => {
+      if (item.url && existing.url && item.url === existing.url) return true;
+      return normalizeTitle(existing.title) === normalized;
+    });
+    if (!exists) deduped.push(item);
+  }
+  return deduped.sort((a, b) => b.publishedAt - a.publishedAt);
+}
+
 export class NewsService {
   private cache: NewsItem[] = [];
   private lastFetchAt = 0;
@@ -49,29 +87,16 @@ export class NewsService {
     }
 
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-      const res = await fetch(CRYPTO_COMPARE_URL, { signal: controller.signal });
-      clearTimeout(timer);
+      const results = await Promise.allSettled([
+        this.fetchCryptoCompare(),
+        ...RSS_SOURCES.map((source) => this.fetchRSSSource(source.channel, source.url)),
+      ]);
 
-      if (!res.ok) throw new Error(`News API ${res.status}`);
-      const data = await res.json();
-      const articles = (data.Data || []).slice(0, 8);
+      const merged = results
+        .filter((result): result is PromiseFulfilledResult<NewsItem[]> => result.status === "fulfilled")
+        .flatMap((result) => result.value);
 
-      this.cache = articles.map((a: any, i: number): NewsItem => {
-        const { sentiment, confidence } = analyzeSentiment(a.title, a.body);
-        return {
-          id: `news-${a.id || i}`,
-          asset: mapAsset(a.title + " " + (a.categories || "")),
-          title: a.title,
-          summary: (a.body || "").slice(0, 200),
-          source: a.source_info?.name || a.source || "Unknown",
-          publishedAt: (a.published_on || 0) * 1000,
-          sentiment,
-          confidence,
-          impact: estimateImpact(a.title),
-        };
-      });
+      this.cache = dedupeNewsItems(merged).slice(0, MAX_NEWS_ITEMS);
       this.lastFetchAt = Date.now();
       return this.cache;
     } catch (e) {
@@ -82,5 +107,93 @@ export class NewsService {
 
   getCachedNews(): NewsItem[] {
     return this.cache;
+  }
+
+  private async fetchCryptoCompare(): Promise<NewsItem[]> {
+    const res = await this.fetchJson(CRYPTO_COMPARE_URL);
+    const data = await res.json();
+    const articles = (data.Data || []).slice(0, 8);
+
+    return articles.map((a: any, i: number): NewsItem => {
+      const title = a.title || "Untitled";
+      const summary = stripHtml((a.body || "").slice(0, 260));
+      const { sentiment, confidence } = analyzeSentiment(title, summary);
+      return {
+        id: `cryptocompare-${a.id || i}`,
+        asset: mapAsset(title + " " + (a.categories || "")),
+        title,
+        summary,
+        source: a.source_info?.name || a.source || "CryptoCompare",
+        channel: "CryptoCompare",
+        url: a.url,
+        publishedAt: (a.published_on || 0) * 1000,
+        sentiment,
+        confidence,
+        impact: estimateImpact(title),
+      };
+    });
+  }
+
+  private async fetchRSSSource(channel: string, url: string): Promise<NewsItem[]> {
+    const proxiedUrl = `${RSS_PROXY}${encodeURIComponent(url)}`;
+    const res = await this.fetchJson(proxiedUrl);
+    const xmlText = await res.text();
+    return this.parseRSS(xmlText, channel);
+  }
+
+  private parseRSS(xmlText: string, channel: string): NewsItem[] {
+    if (typeof DOMParser === "undefined") return [];
+
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlText, "application/xml");
+    const items = Array.from(xml.querySelectorAll("item")).slice(0, 5);
+
+    return items.map((item, index): NewsItem => {
+      const title = item.querySelector("title")?.textContent?.trim() || `${channel} article ${index + 1}`;
+      const summary = stripHtml(
+        item.querySelector("description")?.textContent ||
+        item.querySelector("content\\:encoded")?.textContent ||
+        ""
+      ).slice(0, 260);
+      const publishedRaw =
+        item.querySelector("pubDate")?.textContent ||
+        item.querySelector("dc\\:date")?.textContent ||
+        "";
+      const publishedAt = Date.parse(publishedRaw) || Date.now() - index * 60000;
+      const url = item.querySelector("link")?.textContent?.trim() || undefined;
+      const categoryText = Array.from(item.querySelectorAll("category"))
+        .map((node) => node.textContent || "")
+        .join(" ");
+      const source =
+        item.querySelector("source")?.textContent?.trim() ||
+        channel;
+      const { sentiment, confidence } = analyzeSentiment(title, summary);
+
+      return {
+        id: `${channel.toLowerCase().replace(/\s+/g, "-")}-${publishedAt}-${index}`,
+        asset: mapAsset(`${title} ${summary} ${categoryText}`),
+        title,
+        summary,
+        source,
+        channel,
+        url,
+        publishedAt,
+        sentiment,
+        confidence,
+        impact: estimateImpact(title),
+      };
+    });
+  }
+
+  private async fetchJson(url: string): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`News API ${res.status}`);
+      return res;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

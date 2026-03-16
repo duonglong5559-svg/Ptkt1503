@@ -1000,17 +1000,24 @@ function getVisibleNews(): import("./types").NewsItem[] {
   return news.filter((item) => item.asset === currentNewsFilter);
 }
 
+function renderNewsFilters() {
+  const f = document.getElementById("news-filters");
+  if (!f) return;
+  const allNews = lastPayload?.news || newsService?.getCachedNews() || [];
+  const filters: Array<"all" | "BTC" | "ETH" | "PAXG"> = ["all", "BTC", "ETH", "PAXG"];
+  f.innerHTML = filters.map((asset) => {
+    const count = asset === "all" ? allNews.length : allNews.filter((item) => item.asset === asset).length;
+    const active = asset === currentNewsFilter;
+    return `<button class="news-filter${active ? " active" : ""}" data-asset="${asset}"><span>${getNewsAssetLabel(asset)}</span><em>${count}</em></button>`;
+  }).join("");
+}
+
 function loadNewsIfNeeded() {
   if (newsLoaded) return;
   newsLoaded = true;
   currentNewsFilter = "all";
   const f = document.getElementById("news-filters")!;
-  const allNews = lastPayload?.news || newsService?.getCachedNews() || [];
-  const filters: Array<"all" | "BTC" | "ETH" | "PAXG"> = ["all", "BTC", "ETH", "PAXG"];
-  f.innerHTML = filters.map((asset, i) => {
-    const count = asset === "all" ? allNews.length : allNews.filter((item) => item.asset === asset).length;
-    return `<button class="news-filter${i === 0 ? " active" : ""}" data-asset="${asset}"><span>${getNewsAssetLabel(asset)}</span><em>${count}</em></button>`;
-  }).join("");
+  renderNewsFilters();
   f.onclick = (e) => {
     const b = (e.target as HTMLElement).closest(".news-filter") as HTMLElement | null;
     if (!b) return;
@@ -1024,6 +1031,7 @@ function loadNewsIfNeeded() {
 
 function renderNewsFromPayload() {
   const l = document.getElementById("news-list")!;
+  renderNewsFilters();
   const news = getVisibleNews();
   if (!news.length) {
     l.innerHTML = '<div style="text-align:center;color:var(--text3);padding:20px;font-size:12px">Không có tin tức</div>';
@@ -1036,18 +1044,20 @@ function renderNewsFromPayload() {
     const time = new Date(n.publishedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
     const impactBadge = n.impact === "high" ? "Cao" : n.impact === "medium" ? "Vừa" : "Thấp";
     const assetTag = n.asset === "general" ? "NEWS" : n.asset;
+    const sourceLabel = n.channel && n.channel !== n.source ? `${n.channel} · ${n.source}` : n.source;
+    const articleUrl = n.url || `https://www.google.com/search?q=${encodeURIComponent(n.title)}`;
     return `
       <div class="news-card">
         <div class="news-card-header">
           <div class="news-source-wrap">
             <span class="news-asset-tag">${assetTag}</span>
-            <span class="news-source">${n.source}</span>
+            <span class="news-source">${sourceLabel}</span>
           </div>
           <div class="news-time">${time}</div>
         </div>
         <div class="news-title">${n.title}</div>
         <div class="news-desc">${n.summary || "Không có mô tả chi tiết."}</div>
-        <a class="news-link" href="https://www.google.com/search?q=${encodeURIComponent(n.title)}" target="_blank" rel="noreferrer">Xem thêm</a>
+        <a class="news-link" href="${articleUrl}" target="_blank" rel="noreferrer">Xem thêm</a>
         <div class="news-sentiment ${cls}">
           <strong>${lb} (${n.confidence}%)</strong>
           <span>${desc} · Impact ${impactBadge}</span>

@@ -11,6 +11,7 @@ import { testSymbolMapping } from "./SymbolMapping.test";
 import { testCandleConfirmation } from "./CandleConfirmation.test";
 import { testSignalSanity } from "./SignalSanity.test";
 import { testScenarioEngine } from "./ScenarioEngine.test";
+import { testNewsService } from "./NewsService.test";
 
 let passed = 0;
 let failed = 0;
@@ -66,6 +67,9 @@ async function run() {
 
   console.log("\n▸ ScenarioEngine");
   testScenarioEngine(assert);
+
+  console.log("\n▸ NewsService");
+  testNewsService(assert);
 
   console.log(`\n${"=".repeat(40)}`);
   console.log(`Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);

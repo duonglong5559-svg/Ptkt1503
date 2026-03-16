@@ -7,6 +7,8 @@ export type NewsItem = {
   title: string;
   summary: string;
   source: string;
+  channel?: string;
+  url?: string;
   publishedAt: number;
   sentiment: SentimentLabel;
   confidence: number;
