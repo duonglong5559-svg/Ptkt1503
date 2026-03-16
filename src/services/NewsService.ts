@@ -58,7 +58,7 @@ export class NewsService {
       clearTimeout(timer);
 
       if (!res.ok) throw new Error(`News API ${res.status}`);
-      const data = await res.json();
+      const data = await res.json() as { Data?: any[] };
       const articles = (data.Data || []).slice(0, 8);
 
       this.cache = articles.map((a: any, i: number): NewsItem => {
