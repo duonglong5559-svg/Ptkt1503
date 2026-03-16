@@ -15,6 +15,7 @@ import { ANALYSIS_TIMEFRAMES } from "./types/symbol";
 
 const TIMEFRAMES = [...ANALYSIS_TIMEFRAMES];
 const CANDLE_LIMIT = 150;
+const TRENDLINE_FUTURE_BARS = 64;
 type NewsFilterKey = "all" | "BTC" | "ETH" | "PAXG";
 const NEWS_FILTERS: Array<{ key: NewsFilterKey; label: string }> = [
   { key: "all", label: "Tất cả" },
@@ -22,6 +23,11 @@ const NEWS_FILTERS: Array<{ key: NewsFilterKey; label: string }> = [
   { key: "ETH", label: "Ethereum" },
   { key: "PAXG", label: "Vàng/PAXG" },
 ];
+type TrendlineRenderHandle = {
+  series: ISeriesApi<"Line">;
+  trendline: Trendline;
+  baseWidth: number;
+};
 
 let currentSymbol = "BTCUSDT";
 let selectedTf = "1h";
@@ -33,7 +39,9 @@ let newsService: NewsService;
 let chart: IChartApi | null = null;
 let candleSeries: ISeriesApi<"Candlestick"> | null = null;
 let markersPlugin: ISeriesMarkersPluginApi<any> | null = null;
-let trendlineSeriesList: ISeriesApi<"Line">[] = [];
+let trendlineSeriesList: TrendlineRenderHandle[] = [];
+let trendlinePulseTimer: ReturnType<typeof setInterval> | null = null;
+let trendlinePulsePhase = false;
 let priceLines: any[] = [];
 let lastPayload: UIPayload | null = null;
 let currentPrice = 0;
@@ -173,6 +181,7 @@ function yieldToUI(): Promise<void> {
 function setupChart() {
   const container = document.getElementById("chart-container")!;
   container.innerHTML = "";
+  clearTrendlinePulse();
   trendlineSeriesList = [];
   priceLines = [];
 
@@ -187,7 +196,7 @@ function setupChart() {
     grid: { vertLines: { color: "rgba(255,255,255,0.04)" }, horzLines: { color: "rgba(255,255,255,0.04)" } },
     crosshair: { mode: 0 },
     rightPriceScale: { borderColor: "rgba(255,255,255,0.1)", scaleMargins: { top: 0.1, bottom: 0.1 } },
-    timeScale: { borderColor: "rgba(255,255,255,0.1)", timeVisible: true, secondsVisible: false },
+    timeScale: { borderColor: "rgba(255,255,255,0.1)", timeVisible: true, secondsVisible: false, rightOffset: 12 },
     watermark: { visible: true, text: "SC Crypto & Forex Trading", color: "rgba(255,255,255,0.04)", fontSize: 16 },
   });
 
@@ -303,12 +312,60 @@ function getTrendlineStyle(tl: Trendline): { color: string; width: number } {
   return { color: getTrendlineColor(tl, 0.55), width: 1 };
 }
 
+function clearTrendlinePulse() {
+  if (trendlinePulseTimer) {
+    clearInterval(trendlinePulseTimer);
+    trendlinePulseTimer = null;
+  }
+}
+
+function startTrendlinePulse() {
+  clearTrendlinePulse();
+  const pulseTargets = trendlineSeriesList.filter(({ trendline }) =>
+    trendline.visualState === "hot" || trendline.visualState === "near"
+  );
+  if (pulseTargets.length === 0) return;
+
+  trendlinePulsePhase = false;
+  trendlinePulseTimer = setInterval(() => {
+    trendlinePulsePhase = !trendlinePulsePhase;
+    for (const handle of pulseTargets) {
+      const { trendline, series, baseWidth } = handle;
+      const isHot = trendline.visualState === "hot";
+      const alpha = trendlinePulsePhase
+        ? (isHot ? 1 : 0.94)
+        : (isHot ? 0.78 : 0.72);
+      const width = trendlinePulsePhase
+        ? baseWidth + 1
+        : baseWidth;
+      try {
+        series.applyOptions({
+          color: getTrendlineColor(trendline, alpha),
+          lineWidth: width,
+        });
+      } catch {}
+    }
+  }, 900);
+}
+
+function getChartIntervalSeconds(candles: Candle[]): number {
+  if (candles.length < 2) return 3600;
+  const last = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+  const seconds = Math.round((last.openTime - prev.openTime) / 1000);
+  return seconds > 0 ? seconds : 3600;
+}
+
 function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
   if (!chart) return;
-  for (const s of trendlineSeriesList) { try { chart.removeSeries(s); } catch {} }
+  clearTrendlinePulse();
+  for (const handle of trendlineSeriesList) { try { chart.removeSeries(handle.series); } catch {} }
   trendlineSeriesList = [];
   const closed = candles.filter((c) => c.isClosed);
   if (closed.length === 0 || trendlines.length === 0) return;
+  const futureIntervalSeconds = getChartIntervalSeconds(closed);
+  const lastClosed = closed[closed.length - 1];
+  const lastIndex = closed.length - 1;
 
   for (const tl of trendlines.slice(0, 4)) {
     const { color, width } = getTrendlineStyle(tl);
@@ -327,15 +384,18 @@ function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
       { time: (closed[i2].openTime / 1000) as UTCTimestamp, value: tl.points.y2 },
     ];
 
-    const extIdx = Math.min(i2 + 25, closed.length - 1);
-    if (extIdx > i2) {
-      const extPrice = tl.slope * extIdx + tl.intercept;
-      if (extPrice > 0) data.push({ time: (closed[extIdx].openTime / 1000) as UTCTimestamp, value: extPrice });
+    const extIdx = Math.max(i2 + 20, lastIndex + TRENDLINE_FUTURE_BARS);
+    const extPrice = tl.slope * extIdx + tl.intercept;
+    if (extPrice > 0) {
+      const extTime = ((lastClosed.openTime / 1000) + futureIntervalSeconds * TRENDLINE_FUTURE_BARS) as UTCTimestamp;
+      data.push({ time: extTime, value: extPrice });
     }
 
     series.setData(data);
-    trendlineSeriesList.push(series);
+    trendlineSeriesList.push({ series, trendline: tl, baseWidth: width });
   }
+  startTrendlinePulse();
+  chart.timeScale().fitContent();
 }
 
 // ── Streaming ───────────────────────────────────────────────
@@ -665,6 +725,7 @@ function renderNewsFromPayload() {
     const desc = n.sentiment === "negative" ? "Có thể gây áp lực giảm giá." : n.sentiment === "positive" ? "Có thể hỗ trợ đà tăng." : "Tác động không rõ ràng.";
     const time = new Date(n.publishedAt).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" });
     const safeSource = escapeHtml(n.source);
+    const sourceClass = getNewsSourceClass(n.source);
     const safeTitle = escapeHtml(n.title);
     const safeSummary = escapeHtml(n.summary || "Chưa có tóm tắt cho bài viết này.");
     const impactLabel = n.impact === "high" ? "Tác động cao" : n.impact === "medium" ? "Tác động vừa" : "Tác động thấp";
@@ -681,7 +742,7 @@ function renderNewsFromPayload() {
       : `<span class="news-link disabled">Nguồn ngoài</span>`;
     return `<article class="news-card">
       <div class="news-source-row">
-        <div class="news-source">${safeSource}</div>
+        <div class="news-source"><span class="news-source-badge ${sourceClass}">${safeSource}</span></div>
         <div class="news-time">${escapeHtml(time)}</div>
       </div>
       <div class="news-title">${safeTitle}</div>
@@ -697,6 +758,15 @@ function renderNewsFromPayload() {
 
 function getRenderableNews() {
   return lastPayload?.news || newsService?.getCachedNews() || [];
+}
+
+function getNewsSourceClass(source: string) {
+  const lower = source.toLowerCase();
+  if (lower.includes("investing")) return "source-investing";
+  if (lower.includes("cointelegraph")) return "source-cointelegraph";
+  if (lower.includes("coindesk")) return "source-coindesk";
+  if (lower.includes("cryptocompare")) return "source-cryptocompare";
+  return "source-generic";
 }
 
 function filterNewsItems(news: UIPayload["news"], filter: NewsFilterKey) {

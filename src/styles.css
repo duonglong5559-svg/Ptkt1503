@@ -103,6 +103,12 @@ html,body{height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-sy
 .news-card{padding:10px;margin-bottom:8px;border-radius:var(--radius);border:1px solid rgba(255,215,0,.18);background:linear-gradient(180deg,rgba(255,215,0,.04),var(--bg2))}
 .news-source-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
 .news-source{font-size:10px;color:var(--text3);margin-bottom:0}
+.news-source-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:.02em;border:1px solid var(--border);background:var(--bg3);color:var(--text)}
+.news-source-badge.source-investing{background:rgba(255,174,0,.14);border-color:rgba(255,174,0,.35);color:#ffb300;box-shadow:0 0 12px rgba(255,174,0,.12)}
+.news-source-badge.source-cointelegraph{background:rgba(0,230,118,.12);border-color:rgba(0,230,118,.3);color:var(--green);box-shadow:0 0 12px rgba(0,230,118,.1)}
+.news-source-badge.source-coindesk{background:rgba(68,138,255,.14);border-color:rgba(68,138,255,.3);color:#7cb7ff;box-shadow:0 0 12px rgba(68,138,255,.1)}
+.news-source-badge.source-cryptocompare{background:rgba(255,23,68,.12);border-color:rgba(255,23,68,.28);color:#ff6b8a;box-shadow:0 0 12px rgba(255,23,68,.08)}
+.news-source-badge.source-generic{background:rgba(158,158,158,.12);border-color:rgba(158,158,158,.24);color:var(--text2)}
 .news-time{font-size:10px;color:var(--text3);white-space:nowrap}
 .news-title{font-size:12px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:4px}
 .news-desc{font-size:11px;color:var(--text2);line-height:1.3;margin-bottom:6px}
