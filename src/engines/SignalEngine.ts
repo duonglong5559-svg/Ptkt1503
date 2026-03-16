@@ -108,39 +108,36 @@ export class SignalEngine {
     const totalBigFrames = this.countBigFramesAvailable(timeframeScores);
     const bigFrameMinRequired = Math.max(1, Math.min(2, Math.floor(totalBigFrames * 0.4)));
 
-    const pivotSupportsBearish =
-      pivotRelation.directionBias === "bearish" ||
-      pivotRelation.state === "below_pivot" ||
-      pivotRelation.state === "rejected_from_pivot";
-
-    const pivotSupportsBullish =
-      pivotRelation.directionBias === "bullish" ||
-      pivotRelation.state === "above_pivot" ||
-      pivotRelation.state === "approaching_pivot_from_below";
+    const pivotBlocksBearish = pivotRelation.state === "above_pivot" && pivotRelation.directionBias === "bullish";
+    const pivotBlocksBullish = pivotRelation.state === "below_pivot" && pivotRelation.directionBias === "bearish";
 
     const canWatchShort =
       globalShortPercent >= WATCH_THRESHOLD &&
       bigFramesBearish >= bigFrameMinRequired &&
-      pivotSupportsBearish;
+      !pivotBlocksBearish;
 
     const canWatchLong =
       globalLongPercent >= WATCH_THRESHOLD &&
       bigFramesBullish >= bigFrameMinRequired &&
-      pivotSupportsBullish;
+      !pivotBlocksBullish;
 
     const hasResistanceNearby = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("resistance") && !t.isBroken && t.normalizedDistance <= 1.2
+      (t) => t.type.includes("resistance") && t.normalizedDistance <= 1.2
     );
 
     const hasSupportNearby = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("support") && !t.isBroken && t.normalizedDistance <= 1.2
+      (t) => t.type.includes("support") && t.normalizedDistance <= 1.2
     );
 
     const supportInTouchZone = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("support") && !t.isBroken && (t.proximity === "touch_zone" || t.proximity === "reaction_zone")
+      (t) => t.type.includes("support") && (t.proximity === "touch_zone" || t.proximity === "reaction_zone")
     );
     const resistanceInTouchZone = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("resistance") && !t.isBroken && (t.proximity === "touch_zone" || t.proximity === "reaction_zone")
+      (t) => t.type.includes("resistance") && (t.proximity === "touch_zone" || t.proximity === "reaction_zone")
+    );
+
+    const hasBrokenSupportBelow = trendlineOutput.activeTrendlines.some(
+      (t) => t.type.includes("support") && t.isBroken && t.normalizedDistance <= 2
     );
 
     if (prev && canWatchShort && globalShortPercent >= READY_THRESHOLD) {
@@ -173,6 +170,7 @@ export class SignalEngine {
 
     if (canWatchShort && globalShortPercent >= READY_THRESHOLD) {
       if (resistanceInTouchZone) return "ready_short";
+      if (hasBrokenSupportBelow && globalShortPercent >= 65) return "ready_short";
       if (hasResistanceNearby) return "watch_short";
       return "watch_short";
     }

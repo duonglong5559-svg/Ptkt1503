@@ -30,7 +30,14 @@ export class TrendlineEngine {
     candidates.sort((a, b) => b.strength - a.strength);
     const deduped = this.dedupeLines(candidates);
 
-    const activeTrendlines = deduped.filter((t) => !t.isBroken && t.strength >= 30).slice(0, MAX_ACTIVE_LINES);
+    const unbroken = deduped.filter((t) => !t.isBroken && t.strength >= 30);
+    const recentlyBroken = deduped.filter((t) => t.isBroken && t.strength >= 25 && t.distanceToPricePercent < 3);
+
+    const activeTrendlines = [...unbroken.slice(0, MAX_ACTIVE_LINES)];
+    const remainingSlots = MAX_ACTIVE_LINES - activeTrendlines.length;
+    if (remainingSlots > 0) {
+      activeTrendlines.push(...recentlyBroken.slice(0, remainingSlots));
+    }
 
     this.assignTiers(activeTrendlines);
     this.assignVisualStates(activeTrendlines);
@@ -39,8 +46,8 @@ export class TrendlineEngine {
       .filter((t) => t.distanceToPricePercent < 2.0 && !activeTrendlines.includes(t) && t.strength >= 20)
       .slice(0, 2);
 
-    const primarySupport = activeTrendlines.find((t) => t.type === "ascending_support" && t.tier === "primary");
-    const primaryResistance = activeTrendlines.find((t) => t.type === "descending_resistance" && t.tier === "primary");
+    const primarySupport = activeTrendlines.find((t) => t.type.includes("support") && t.tier === "primary");
+    const primaryResistance = activeTrendlines.find((t) => t.type.includes("resistance") && t.tier === "primary");
 
     return {
       symbol, timeframe, activeTrendlines, nearbyTrendlines,

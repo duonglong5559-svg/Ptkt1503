@@ -502,10 +502,20 @@ function dedupeTrendlines(lines: Trendline[]): Trendline[] {
 function updateChartAnnotations(payload: UIPayload) {
   const tf = pipeline?.getState().timeframeResults.get(selectedTf) as TimeframeAnalysisResult | undefined;
   const sig = pipeline?.getState().lastSignal;
+
   if (tf && chartCandleCache.length) {
     renderPatternMarkers(tf.patterns.patterns, chartCandleCache);
-    renderTrendlines(tf.trendlines.activeTrendlines, chartCandleCache);
   }
+
+  if (chartCandleCache.length) {
+    const allTrendlines: Trendline[] = [];
+    for (const r of pipeline.getState().timeframeResults.values()) {
+      allTrendlines.push(...(r as TimeframeAnalysisResult).trendlines.activeTrendlines);
+    }
+    const deduped = dedupeTrendlines(allTrendlines).slice(0, 4);
+    renderTrendlines(deduped, chartCandleCache);
+  }
+
   if (sig) renderEntryLines(sig);
 }
 
