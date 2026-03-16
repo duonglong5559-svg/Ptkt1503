@@ -236,4 +236,56 @@ export function testSignalEngine(assert: AssertFn) {
 
     assert(result.state === "idle", "Bearish EMA alignment blocks bullish setup");
   }
+
+  // Test: poor risk reward downgrades bullish setup
+  {
+    const result = engine.evaluate({
+      symbol: "BTCUSDT",
+      timeframeScores: makeScores("bullish"),
+      globalLongPercent: 70,
+      globalShortPercent: 30,
+      pivotRelation: makePivot({
+        levels: { pivot: 5194, r1: 5200, s1: 5188, r2: 5210, s2: 5180, r3: 5220, s3: 5170 },
+        state: "above_pivot",
+        nearestSupport: 5190,
+        nearestResistance: 5195,
+        targetHint: 5195,
+        directionBias: "bullish",
+      }),
+      trendlineOutput: makeTL(),
+      structureState: "uptrend",
+      emaContext: {
+        ema20: 5194,
+        ema50: 5188,
+        ema200: 5150,
+        priceAboveEma20: true,
+        priceAboveEma50: true,
+        bullishAligned: true,
+        bearishAligned: false,
+        ema20Slope: 0.3,
+        ema50Slope: 0.2,
+        ema200Slope: 0.1,
+      },
+      volumeContext: {
+        currentVolume: 1200,
+        averageVolume: 1000,
+        relativeVolume: 1.2,
+        bullVolumeRatio: 0.6,
+        bearVolumeRatio: 0.4,
+        trend: "expanding",
+        breakoutConfirmed: true,
+      },
+      currentPrice: 5200,
+      atr: 20,
+      latestSwingLow: 5188,
+      nearestSupport: 5190,
+      nearestResistance: 5195,
+      currentTime: Date.now(),
+    });
+
+    assert(
+      result.state === "idle" || result.state === "watch_long",
+      `Poor RR does not promote long setup (got ${result.state})`
+    );
+  }
 }

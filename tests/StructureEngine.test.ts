@@ -19,12 +19,30 @@ function makeSwing(
 export function testStructureEngine(assert: AssertFn) {
   const engine = new StructureEngine();
 
+  const orderedUptrend = [
+    makeSwing("high", 2, 110),
+    makeSwing("low", 5, 100),
+    makeSwing("high", 8, 116),
+    makeSwing("low", 11, 106),
+    makeSwing("high", 14, 123),
+    makeSwing("low", 17, 112),
+  ];
+  const orderedDowntrend = [
+    makeSwing("low", 2, 100),
+    makeSwing("high", 5, 110),
+    makeSwing("low", 8, 94),
+    makeSwing("high", 11, 104),
+    makeSwing("low", 14, 88),
+    makeSwing("high", 17, 98),
+  ];
+
   {
     const result = engine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
       swingHighs: [makeSwing("high", 2, 110)],
       swingLows: [makeSwing("low", 4, 100)],
+      allSwings: [makeSwing("high", 2, 110), makeSwing("low", 4, 100)],
       currentPrice: 105,
     });
 
@@ -35,8 +53,9 @@ export function testStructureEngine(assert: AssertFn) {
     const result = engine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
-      swingHighs: [makeSwing("high", 2, 110), makeSwing("high", 8, 116), makeSwing("high", 14, 123)],
-      swingLows: [makeSwing("low", 5, 100), makeSwing("low", 11, 106), makeSwing("low", 17, 112)],
+      swingHighs: orderedUptrend.filter((s) => s.type === "high"),
+      swingLows: orderedUptrend.filter((s) => s.type === "low"),
+      allSwings: orderedUptrend,
       currentPrice: 120,
     });
 
@@ -48,8 +67,9 @@ export function testStructureEngine(assert: AssertFn) {
     const result = engine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
-      swingHighs: [makeSwing("high", 2, 130), makeSwing("high", 8, 124), makeSwing("high", 14, 118)],
-      swingLows: [makeSwing("low", 5, 120), makeSwing("low", 11, 114), makeSwing("low", 17, 108)],
+      swingHighs: orderedDowntrend.filter((s) => s.type === "high"),
+      swingLows: orderedDowntrend.filter((s) => s.type === "low"),
+      allSwings: orderedDowntrend,
       currentPrice: 110,
     });
 
@@ -61,25 +81,68 @@ export function testStructureEngine(assert: AssertFn) {
     const result = engine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
-      swingHighs: [makeSwing("high", 2, 130), makeSwing("high", 8, 126), makeSwing("high", 14, 121)],
-      swingLows: [makeSwing("low", 5, 120), makeSwing("low", 11, 113), makeSwing("low", 17, 108)],
+      swingHighs: [
+        makeSwing("high", 2, 130),
+        makeSwing("high", 8, 126),
+        makeSwing("high", 14, 121),
+      ],
+      swingLows: [
+        makeSwing("low", 5, 120),
+        makeSwing("low", 11, 113),
+        makeSwing("low", 17, 108),
+      ],
+      allSwings: [
+        makeSwing("high", 2, 130),
+        makeSwing("low", 5, 120),
+        makeSwing("high", 8, 126),
+        makeSwing("low", 11, 113),
+        makeSwing("high", 14, 121),
+        makeSwing("low", 17, 108),
+      ],
       currentPrice: 128,
     });
 
     assert(result.state === "breakout", "Break above prior swing high = breakout");
-    assert(result.recentBreak === "bullish_bos", "Bullish BOS flag set");
+    assert(result.recentBreak === "choch_up", "Bullish CHOCH flag set when downtrend breaks up");
   }
 
   {
     const result = engine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
-      swingHighs: [makeSwing("high", 2, 110), makeSwing("high", 8, 116), makeSwing("high", 14, 121)],
-      swingLows: [makeSwing("low", 5, 100), makeSwing("low", 11, 106), makeSwing("low", 17, 112)],
+      swingHighs: orderedUptrend.filter((s) => s.type === "high"),
+      swingLows: orderedUptrend.filter((s) => s.type === "low"),
+      allSwings: orderedUptrend,
       currentPrice: 104,
     });
 
     assert(result.state === "breakdown", "Break below prior swing low = breakdown");
-    assert(result.recentBreak === "bearish_bos", "Bearish BOS flag set");
+    assert(result.recentBreak === "choch_down", "Bearish CHOCH flag set when uptrend breaks down");
+  }
+
+  {
+    const result = engine.analyze({
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      swingHighs: orderedUptrend.filter((s) => s.type === "high"),
+      swingLows: orderedUptrend.filter((s) => s.type === "low"),
+      allSwings: orderedUptrend,
+      currentPrice: 113,
+    });
+
+    assert(result.state === "retest_up", "Uptrend pullback inside higher-low zone = retest_up");
+  }
+
+  {
+    const result = engine.analyze({
+      symbol: "BTCUSDT",
+      timeframe: "1h",
+      swingHighs: orderedDowntrend.filter((s) => s.type === "high"),
+      swingLows: orderedDowntrend.filter((s) => s.type === "low"),
+      allSwings: orderedDowntrend,
+      currentPrice: 94,
+    });
+
+    assert(result.state === "retest_down", "Downtrend pullback inside lower-high zone = retest_down");
   }
 }

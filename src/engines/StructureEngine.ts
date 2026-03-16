@@ -1,10 +1,11 @@
-import { Candle, SwingPoint, StructureState } from "../types";
+import { SwingPoint, StructureState } from "../types";
 
 export type StructureEngineInput = {
   symbol: string;
   timeframe: string;
   swingHighs: SwingPoint[];
   swingLows: SwingPoint[];
+  allSwings?: SwingPoint[];
   currentPrice: number;
 };
 
@@ -19,9 +20,14 @@ export type StructureEngineOutput = {
 
 export class StructureEngine {
   analyze(input: StructureEngineInput): StructureEngineOutput {
-    const { swingHighs, swingLows, currentPrice } = input;
+    const { currentPrice } = input;
+    const orderedSwings = this.normalizeSwings(
+      input.allSwings || [...input.swingHighs, ...input.swingLows]
+    );
+    const swingHighs = orderedSwings.filter((s) => s.type === "high");
+    const swingLows = orderedSwings.filter((s) => s.type === "low");
 
-    if (swingHighs.length < 2 || swingLows.length < 2) {
+    if (orderedSwings.length < 4 || swingHighs.length < 2 || swingLows.length < 2) {
       return {
         state: "range",
         description: "Insufficient swing data for structure analysis.",
@@ -31,67 +37,89 @@ export class StructureEngine {
       };
     }
 
-    const recentHighs = swingHighs.slice(-3);
-    const recentLows = swingLows.slice(-3);
-
-    const hhCount = this.countHigherHighs(recentHighs);
-    const hlCount = this.countHigherLows(recentLows);
-    const lhCount = this.countLowerHighs(recentHighs);
-    const llCount = this.countLowerLows(recentLows);
+    const recentSequence = orderedSwings.slice(-8);
+    const recentHighs = recentSequence.filter((s) => s.type === "high").slice(-3);
+    const recentLows = recentSequence.filter((s) => s.type === "low").slice(-3);
+    const lastSwing = recentSequence[recentSequence.length - 1];
 
     const lastHigh = recentHighs[recentHighs.length - 1];
-    const prevHigh = recentHighs.length >= 2 ? recentHighs[recentHighs.length - 2] : null;
+    const prevHigh = recentHighs.length >= 2 ? recentHighs[recentHighs.length - 2] : undefined;
     const lastLow = recentLows[recentLows.length - 1];
-    const prevLow = recentLows.length >= 2 ? recentLows[recentLows.length - 2] : null;
+    const prevLow = recentLows.length >= 2 ? recentLows[recentLows.length - 2] : undefined;
 
-    let recentBreak: StructureEngineOutput["recentBreak"];
-
-    if (prevLow && currentPrice < prevLow.price && hhCount > 0) {
+    if (!lastHigh || !prevHigh || !lastLow || !prevLow) {
       return {
-        state: "breakdown",
-        description: `Break of structure bearish. Giá phá đáy ${prevLow.price.toFixed(2)}.`,
+        state: "range",
+        description: "Insufficient alternating swing data for structure analysis.",
         isUptrend: false,
-        isDowntrend: true,
-        isRange: false,
-        recentBreak: "bearish_bos",
+        isDowntrend: false,
+        isRange: true,
       };
     }
 
-    if (prevHigh && currentPrice > prevHigh.price && llCount > 0) {
+    const higherHigh = lastHigh.price > prevHigh.price;
+    const lowerHigh = lastHigh.price < prevHigh.price;
+    const higherLow = lastLow.price > prevLow.price;
+    const lowerLow = lastLow.price < prevLow.price;
+
+    const wasDowntrend = lowerHigh && lowerLow;
+    const wasUptrend = higherHigh && higherLow;
+
+    if (currentPrice > prevHigh.price) {
       return {
         state: "breakout",
         description: `Break of structure bullish. Giá phá đỉnh ${prevHigh.price.toFixed(2)}.`,
         isUptrend: true,
         isDowntrend: false,
         isRange: false,
-        recentBreak: "bullish_bos",
+        recentBreak: wasDowntrend ? "choch_up" : "bullish_bos",
       };
     }
 
-    if (hhCount >= 1 && hlCount >= 1) {
+    if (currentPrice < prevLow.price) {
       return {
-        state: "uptrend",
-        description: "Cấu trúc thị trường tăng: Đỉnh cao hơn, Đáy cao hơn.",
+        state: "breakdown",
+        description: `Break of structure bearish. Giá phá đáy ${prevLow.price.toFixed(2)}.`,
+        isUptrend: false,
+        isDowntrend: true,
+        isRange: false,
+        recentBreak: wasUptrend ? "choch_down" : "bearish_bos",
+      };
+    }
+
+    if (wasUptrend) {
+      const inRetestZone =
+        lastSwing.type === "low" &&
+        currentPrice >= lastLow.price &&
+        currentPrice <= lastHigh.price;
+      return {
+        state: inRetestZone ? "retest_up" : "uptrend",
+        description: inRetestZone
+          ? `Xu hướng tăng đang retest vùng đáy cao hơn ${lastLow.price.toFixed(2)}.`
+          : "Cấu trúc thị trường tăng: Đỉnh cao hơn, Đáy cao hơn.",
         isUptrend: true,
         isDowntrend: false,
         isRange: false,
       };
     }
 
-    if (lhCount >= 1 && llCount >= 1) {
+    if (wasDowntrend) {
+      const inRetestZone =
+        lastSwing.type === "high" &&
+        currentPrice <= lastHigh.price &&
+        currentPrice >= lastLow.price;
       return {
-        state: "downtrend",
-        description: "Cấu trúc thị trường giảm: Đỉnh thấp hơn, Đáy thấp hơn.",
+        state: inRetestZone ? "retest_down" : "downtrend",
+        description: inRetestZone
+          ? `Xu hướng giảm đang retest vùng đỉnh thấp hơn ${lastHigh.price.toFixed(2)}.`
+          : "Cấu trúc thị trường giảm: Đỉnh thấp hơn, Đáy thấp hơn.",
         isUptrend: false,
         isDowntrend: true,
         isRange: false,
       };
     }
 
-    if (
-      (hhCount >= 1 && llCount >= 1) ||
-      (lhCount >= 1 && hlCount >= 1)
-    ) {
+    if ((higherHigh && lowerLow) || (lowerHigh && higherLow)) {
       return {
         state: "transition",
         description: "Market structure in transition. Mixed signals from swings.",
@@ -110,35 +138,28 @@ export class StructureEngine {
     };
   }
 
-  private countHigherHighs(highs: SwingPoint[]): number {
-    let count = 0;
-    for (let i = 1; i < highs.length; i++) {
-      if (highs[i].price > highs[i - 1].price) count++;
-    }
-    return count;
-  }
+  private normalizeSwings(swings: SwingPoint[]): SwingPoint[] {
+    const ordered = [...swings].sort((a, b) => a.index - b.index);
+    const normalized: SwingPoint[] = [];
 
-  private countHigherLows(lows: SwingPoint[]): number {
-    let count = 0;
-    for (let i = 1; i < lows.length; i++) {
-      if (lows[i].price > lows[i - 1].price) count++;
-    }
-    return count;
-  }
+    for (const swing of ordered) {
+      const previous = normalized[normalized.length - 1];
+      if (!previous) {
+        normalized.push(swing);
+        continue;
+      }
 
-  private countLowerHighs(highs: SwingPoint[]): number {
-    let count = 0;
-    for (let i = 1; i < highs.length; i++) {
-      if (highs[i].price < highs[i - 1].price) count++;
-    }
-    return count;
-  }
+      if (previous.type === swing.type) {
+        const replace =
+          (swing.type === "high" && swing.price >= previous.price) ||
+          (swing.type === "low" && swing.price <= previous.price);
+        if (replace) normalized[normalized.length - 1] = swing;
+        continue;
+      }
 
-  private countLowerLows(lows: SwingPoint[]): number {
-    let count = 0;
-    for (let i = 1; i < lows.length; i++) {
-      if (lows[i].price < lows[i - 1].price) count++;
+      normalized.push(swing);
     }
-    return count;
+
+    return normalized;
   }
 }

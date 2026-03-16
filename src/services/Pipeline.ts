@@ -243,6 +243,7 @@ export class Pipeline {
       timeframe: tf,
       swingHighs: swings.swingHighs,
       swingLows: swings.swingLows,
+      allSwings: swings.allSwings,
       currentPrice,
     });
 

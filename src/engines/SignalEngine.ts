@@ -14,6 +14,15 @@ const COOLDOWN_MS = 5 * 60 * 1000;
 const ATR_BUFFER_MULT = 0.5;
 const RR_MIN = 1.2;
 
+type MarketRegime =
+  | "trend_long"
+  | "trend_short"
+  | "breakout_long"
+  | "breakdown_short"
+  | "range_reversal"
+  | "transition"
+  | "no_trade";
+
 export class SignalEngine {
   evaluate(input: SignalEngineInput): TradingSignal {
     const {
@@ -50,8 +59,19 @@ export class SignalEngine {
       takeProfit
     );
 
-    const invalidationReason = this.checkInvalidation(input, state, previousSignal);
-    const finalState: SignalState = invalidationReason ? "invalidated" : state;
+    const qualityState = this.applyQualityGates(
+      input,
+      state,
+      direction,
+      rr,
+      entryLong,
+      entryShort,
+      stopLoss,
+      takeProfit
+    );
+
+    const invalidationReason = this.checkInvalidation(input, qualityState, previousSignal);
+    const finalState: SignalState = invalidationReason ? "invalidated" : qualityState;
 
     const summaryText = this.buildSummary(input, finalState, direction, entryLong, entryShort, target);
     const detailText = this.buildDetails(input, finalState, direction, entryLong, entryShort, stopLoss, takeProfit, target);
@@ -169,12 +189,22 @@ export class SignalEngine {
 
     const longContextReady = structureSupportsLong || hasSupportNearby || supportInTouchZone;
     const shortContextReady = structureSupportsShort || hasResistanceNearby || resistanceInTouchZone;
+    const regime = this.deriveMarketRegime(input);
+    const regimeAllowsLong =
+      regime === "trend_long" ||
+      regime === "breakout_long" ||
+      (regime === "range_reversal" && supportInTouchZone);
+    const regimeAllowsShort =
+      regime === "trend_short" ||
+      regime === "breakdown_short" ||
+      (regime === "range_reversal" && resistanceInTouchZone);
 
     const canWatchShort =
       globalShortPercent >= WATCH_THRESHOLD &&
       bigFramesBearish >= bigFrameMinRequired &&
       !pivotBlocksBearish &&
       shortContextReady &&
+      regimeAllowsShort &&
       emaSupportsShort &&
       volumeSupportsShort;
 
@@ -183,6 +213,7 @@ export class SignalEngine {
       bigFramesBullish >= bigFrameMinRequired &&
       !pivotBlocksBullish &&
       longContextReady &&
+      regimeAllowsLong &&
       emaSupportsLong &&
       volumeSupportsLong;
 
@@ -232,6 +263,85 @@ export class SignalEngine {
     if (canWatchLong) return "watch_long";
 
     return "idle";
+  }
+
+  private deriveMarketRegime(input: SignalEngineInput): MarketRegime {
+    const { structureState, emaContext, volumeContext } = input;
+
+    const emaSupportsLong =
+      !emaContext ||
+      emaContext.bullishAligned ||
+      (emaContext.priceAboveEma20 && emaContext.ema20Slope > 0);
+    const emaSupportsShort =
+      !emaContext ||
+      emaContext.bearishAligned ||
+      (!emaContext.priceAboveEma20 && emaContext.ema20Slope < 0);
+
+    const breakoutVolumeSupportsLong =
+      !volumeContext ||
+      (volumeContext.breakoutConfirmed && volumeContext.bullVolumeRatio >= volumeContext.bearVolumeRatio);
+    const breakoutVolumeSupportsShort =
+      !volumeContext ||
+      (volumeContext.breakoutConfirmed && volumeContext.bearVolumeRatio >= volumeContext.bullVolumeRatio);
+
+    if (structureState === "breakout") {
+      return emaSupportsLong && breakoutVolumeSupportsLong ? "breakout_long" : "transition";
+    }
+    if (structureState === "breakdown") {
+      return emaSupportsShort && breakoutVolumeSupportsShort ? "breakdown_short" : "transition";
+    }
+    if (structureState === "uptrend" || structureState === "retest_up") {
+      return emaSupportsLong ? "trend_long" : "transition";
+    }
+    if (structureState === "downtrend" || structureState === "retest_down") {
+      return emaSupportsShort ? "trend_short" : "transition";
+    }
+    if (structureState === "range") {
+      return "range_reversal";
+    }
+    if (structureState === "transition") {
+      return "transition";
+    }
+    return "no_trade";
+  }
+
+  private applyQualityGates(
+    input: SignalEngineInput,
+    state: SignalState,
+    direction: "long" | "short" | "neutral",
+    rr: number | undefined,
+    entryLong?: number,
+    entryShort?: number,
+    stopLoss?: number,
+    takeProfit?: number
+  ): SignalState {
+    if (direction === "neutral") return state;
+
+    const regime = this.deriveMarketRegime(input);
+    if (regime === "no_trade" || regime === "transition") {
+      return "idle";
+    }
+
+    const entry = direction === "long" ? entryLong : entryShort;
+    const fallbackState: SignalState = direction === "long" ? "watch_long" : "watch_short";
+    const hardStates: SignalState[] = direction === "long"
+      ? ["ready_long", "triggered_long", "active_long"]
+      : ["ready_short", "triggered_short", "active_short"];
+
+    if (!entry || !stopLoss || !takeProfit) {
+      return hardStates.includes(state) ? fallbackState : state;
+    }
+
+    if (rr !== undefined && rr < RR_MIN) {
+      if (state === fallbackState && rr < RR_MIN * 0.85) return "idle";
+      return hardStates.includes(state) ? fallbackState : state;
+    }
+
+    if (input.atr && Math.abs(entry - stopLoss) / input.atr > 2.2) {
+      return hardStates.includes(state) ? fallbackState : state;
+    }
+
+    return state;
   }
 
   private resolveDirection(
@@ -712,7 +822,7 @@ export class SignalEngine {
     state: SignalState,
     direction: "long" | "short" | "neutral"
   ): { primaryScenario?: string; alternativeScenario?: string } {
-    const { pivotRelation, currentPrice } = input;
+    const { pivotRelation } = input;
     const pivotPrice = pivotRelation.levels.pivot.toFixed(2);
 
     if (state === "idle" || state === "invalidated" || state === "cooldown") {
@@ -753,6 +863,7 @@ export class SignalEngine {
     target?: number
   ): string[] {
     const details: string[] = [];
+    const regime = this.deriveMarketRegime(input);
 
     details.push(`State: ${state}`);
     details.push(`Direction: ${direction}`);
@@ -770,6 +881,7 @@ export class SignalEngine {
     details.push(`Pivot state: ${input.pivotRelation.state}`);
     details.push(`Trendlines: ${input.trendlineOutput.trendlineCount} active`);
     details.push(`Structure: ${input.structureState}`);
+    details.push(`Regime: ${regime}`);
     if (input.emaContext) {
       details.push(
         `EMA: 20 ${input.emaContext.ema20 ?? "N/A"} / 50 ${input.emaContext.ema50 ?? "N/A"} / 200 ${input.emaContext.ema200 ?? "N/A"}`
