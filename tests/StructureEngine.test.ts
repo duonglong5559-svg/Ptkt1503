@@ -27,6 +27,13 @@ export function testStructureEngine(assert: AssertFn) {
     makeSwing("high", 14, 123),
     makeSwing("low", 17, 112),
   ];
+  const orderedUptrendHighLast = [
+    makeSwing("high", 2, 110),
+    makeSwing("low", 5, 100),
+    makeSwing("high", 8, 116),
+    makeSwing("low", 11, 106),
+    makeSwing("high", 14, 123),
+  ];
   const orderedDowntrend = [
     makeSwing("low", 2, 100),
     makeSwing("high", 5, 110),
@@ -34,6 +41,13 @@ export function testStructureEngine(assert: AssertFn) {
     makeSwing("high", 11, 104),
     makeSwing("low", 14, 88),
     makeSwing("high", 17, 98),
+  ];
+  const orderedDowntrendLowLast = [
+    makeSwing("low", 2, 100),
+    makeSwing("high", 5, 110),
+    makeSwing("low", 8, 94),
+    makeSwing("high", 11, 104),
+    makeSwing("low", 14, 88),
   ];
 
   {
@@ -53,10 +67,10 @@ export function testStructureEngine(assert: AssertFn) {
     const result = engine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
-      swingHighs: orderedUptrend.filter((s) => s.type === "high"),
-      swingLows: orderedUptrend.filter((s) => s.type === "low"),
-      allSwings: orderedUptrend,
-      currentPrice: 120,
+      swingHighs: orderedUptrendHighLast.filter((s) => s.type === "high"),
+      swingLows: orderedUptrendHighLast.filter((s) => s.type === "low"),
+      allSwings: orderedUptrendHighLast,
+      currentPrice: 115,
     });
 
     assert(result.state === "uptrend", "Higher highs and higher lows = uptrend");
@@ -67,10 +81,10 @@ export function testStructureEngine(assert: AssertFn) {
     const result = engine.analyze({
       symbol: "BTCUSDT",
       timeframe: "1h",
-      swingHighs: orderedDowntrend.filter((s) => s.type === "high"),
-      swingLows: orderedDowntrend.filter((s) => s.type === "low"),
-      allSwings: orderedDowntrend,
-      currentPrice: 110,
+      swingHighs: orderedDowntrendLowLast.filter((s) => s.type === "high"),
+      swingLows: orderedDowntrendLowLast.filter((s) => s.type === "low"),
+      allSwings: orderedDowntrendLowLast,
+      currentPrice: 96,
     });
 
     assert(result.state === "downtrend", "Lower highs and lower lows = downtrend");
