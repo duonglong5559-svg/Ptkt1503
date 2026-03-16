@@ -404,4 +404,91 @@ export function testSignalEngine(assert: AssertFn) {
     assert(result.entryLong !== undefined, "Long entry exists for TP sanity test");
     assert(result.takeProfit !== undefined && result.entryLong !== undefined && result.takeProfit > result.entryLong, "Take-profit stays above long entry");
   }
+
+  // Test: triggered state updates step statuses consistently
+  {
+    const supportLine = makeLine();
+    const result = engine.evaluate({
+      symbol: "BTCUSDT",
+      timeframeScores: makeScores("bullish"),
+      globalLongPercent: 70,
+      globalShortPercent: 30,
+      pivotRelation: makePivot({
+        state: "above_pivot",
+        directionBias: "bullish",
+        nearestSupport: 72770,
+        nearestResistance: 73723,
+      }),
+      trendlineOutput: makeTL({
+        activeTrendlines: [supportLine],
+        trendlineCount: 1,
+        primarySupport: supportLine,
+      }),
+      structureState: "uptrend",
+      currentPrice: 72770,
+      atr: 120,
+      nearestSupport: 72770,
+      nearestResistance: 73723,
+      currentTime: Date.now(),
+    });
+
+    assert(result.state === "triggered_long", "Support touch produces triggered long state");
+    assert(result.steps[1].status === "completed", "Triggered setup marks candle confirmation completed");
+    assert(result.steps[2].status === "completed", "Triggered setup marks price-zone step completed");
+    assert(result.steps[3].status === "active", "Triggered setup marks entry step active");
+  }
+
+  // Test: active state completes entry step and avoids negative zero
+  {
+    const prevTriggered = {
+      ...engine.evaluate({
+        symbol: "BTCUSDT",
+        timeframeScores: makeScores("bullish"),
+        globalLongPercent: 70,
+        globalShortPercent: 30,
+        pivotRelation: makePivot({
+          state: "above_pivot",
+          directionBias: "bullish",
+          nearestSupport: 72770,
+          nearestResistance: 73723,
+        }),
+        trendlineOutput: makeTL(),
+        structureState: "uptrend",
+        currentPrice: 72770,
+        atr: 120,
+        nearestSupport: 72770,
+        nearestResistance: 73723,
+        currentTime: Date.now(),
+      }),
+      state: "triggered_long" as const,
+      direction: "long" as const,
+      entryLong: 72773.56,
+      stopLoss: 71030.06,
+    };
+
+    const result = engine.evaluate({
+      symbol: "BTCUSDT",
+      timeframeScores: makeScores("bullish"),
+      globalLongPercent: 70,
+      globalShortPercent: 30,
+      pivotRelation: makePivot({
+        state: "above_pivot",
+        directionBias: "bullish",
+        nearestSupport: 72770,
+        nearestResistance: 73723,
+      }),
+      trendlineOutput: makeTL(),
+      structureState: "uptrend",
+      currentPrice: 72774,
+      atr: 120,
+      nearestSupport: 72770,
+      nearestResistance: 73723,
+      previousSignal: prevTriggered,
+      currentTime: Date.now(),
+    });
+
+    assert(result.state === "active_long", "Price continuation after trigger produces active long");
+    assert(result.steps[3].status === "completed", "Active setup completes entry step");
+    assert(!result.steps[3].description.includes("-0.0%"), "Entry distance display avoids negative zero");
+  }
 }

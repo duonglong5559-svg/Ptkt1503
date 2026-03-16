@@ -474,6 +474,16 @@ export class SignalEngine {
     const parts: string[] = [];
     parts.push(pivotRelation.narrative);
 
+    if (state === "triggered_long" && entryLong) {
+      parts.push(`Tín hiệu Long đã kích hoạt quanh ${entryLong.toFixed(2)}. Chờ xác nhận giữ giá để duy trì setup.`);
+    } else if (state === "triggered_short" && entryShort) {
+      parts.push(`Tín hiệu Short đã kích hoạt quanh ${entryShort.toFixed(2)}. Chờ xác nhận từ chối giá để duy trì setup.`);
+    } else if (state === "active_long" && entryLong) {
+      parts.push(`Lệnh Long đang hoạt động từ vùng ${entryLong.toFixed(2)}.`);
+    } else if (state === "active_short" && entryShort) {
+      parts.push(`Lệnh Short đang hoạt động từ vùng ${entryShort.toFixed(2)}.`);
+    }
+
     if (state === "ready_short" || state === "watch_short") {
       if (entryShort) {
         parts.push(
@@ -509,18 +519,6 @@ export class SignalEngine {
     const isLong = direction === "long";
     const pct = isLong ? globalLongPercent : globalShortPercent;
 
-    const step1Status: SignalStep["status"] =
-      (state !== "idle" && state !== "invalidated") ? "completed" : (pct >= 55 ? "active" : "pending");
-
-    const step2Status: SignalStep["status"] =
-      (state === "ready_long" || state === "ready_short") ? "completed" :
-      (state === "watch_long" || state === "watch_short") ? "active" : "pending";
-
-    const step3Status: SignalStep["status"] =
-      (state === "ready_long" || state === "ready_short") ? "active" : "pending";
-
-    const step4Status: SignalStep["status"] = "pending";
-
     if (direction === "neutral") {
       return [
         { step: 1, title: "Xác nhận xu hướng đa khung", description: `Chờ bias rõ ràng hơn. Hiện tại: Long ${globalLongPercent}% / Short ${globalShortPercent}%`, status: "pending" },
@@ -531,7 +529,7 @@ export class SignalEngine {
     }
 
     const entry = isLong ? entryLong : entryShort;
-    const entryPctFromPrice = entry ? (((entry - currentPrice) / currentPrice) * 100).toFixed(1) : "?";
+    const entryPctFromPrice = entry ? this.formatEntryDistance(entry, currentPrice) : "?";
     const atrWidth = (input.atr || currentPrice * 0.005) * 0.5;
     let zoneLow = isLong ? (nearestSupport || pivotRelation.levels.s1) : (pivotRelation.levels.pivot);
     let zoneHigh = isLong ? (pivotRelation.levels.pivot) : (nearestResistance || pivotRelation.levels.r1);
@@ -544,6 +542,45 @@ export class SignalEngine {
     const zoneLabel = isLong ? "Hỗ trợ" : "Kháng cự";
     const slLabel = isLong ? "dưới Hỗ trợ" : "trên Kháng cự";
     const slAdj = stopLoss && entry ? (((Math.abs(stopLoss - entry) / entry) * 100).toFixed(1)) : "0.6";
+
+    const directionalActive = state !== "idle" && state !== "invalidated" && state !== "cooldown";
+    const candleConfirmedStates: SignalState[] = ["ready_long", "ready_short", "triggered_long", "triggered_short", "active_long", "active_short"];
+    const zoneReachedStates: SignalState[] = ["triggered_long", "triggered_short", "active_long", "active_short"];
+    const entryTriggeredStates: SignalState[] = ["triggered_long", "triggered_short"];
+    const entryActiveStates: SignalState[] = ["active_long", "active_short"];
+
+    const step1Status: SignalStep["status"] =
+      directionalActive ? "completed" : (pct >= 55 ? "active" : "pending");
+    const step2Status: SignalStep["status"] =
+      candleConfirmedStates.includes(state) ? "completed" :
+      (state === "watch_long" || state === "watch_short") ? "active" : "pending";
+    const step3Status: SignalStep["status"] =
+      zoneReachedStates.includes(state) ? "completed" :
+      (state === "ready_long" || state === "ready_short") ? "active" : "pending";
+    const step4Status: SignalStep["status"] =
+      entryActiveStates.includes(state) ? "completed" :
+      entryTriggeredStates.includes(state) ? "active" : "pending";
+
+    const step3Title =
+      step3Status === "completed"
+        ? `Giá đã phản ứng tại vùng ${zoneLabel}`
+        : step3Status === "active"
+        ? `Giá đang trong vùng ${zoneLabel}`
+        : `Chờ giá vào vùng ${zoneLabel}`;
+
+    const step4Title =
+      step4Status === "completed"
+        ? `Đã vào lệnh ${dirLabel} với Stop Loss ${slLabel} (điều chỉnh +${slAdj}%)`
+        : step4Status === "active"
+        ? `Tín hiệu ${dirLabel} đã kích hoạt, chờ xác nhận tiếp diễn`
+        : `Vào lệnh ${dirLabel} với Stop Loss ${slLabel} (đã điều chỉnh +${slAdj}%)`;
+
+    const step4Description =
+      step4Status === "completed"
+        ? `Entry: ${entry?.toFixed(2) || "N/A"} | Giá hiện tại: ${currentPrice.toFixed(2)}`
+        : step4Status === "active"
+        ? `Entry: ${entry?.toFixed(2) || "N/A"} (${entryPctFromPrice}%)`
+        : `Entry: ${entry?.toFixed(2) || "N/A"} (${entryPctFromPrice}%)`;
 
     return [
       {
@@ -564,16 +601,14 @@ export class SignalEngine {
       },
       {
         step: 3,
-        title: step3Status === "active"
-          ? `Giá đang trong vùng ${zoneLabel}`
-          : `Chờ giá vào vùng ${zoneLabel}`,
+        title: step3Title,
         description: `zone: ${Math.min(zoneLow, zoneHigh).toFixed(2)} - ${Math.max(zoneLow, zoneHigh).toFixed(2)}`,
         status: step3Status,
       },
       {
         step: 4,
-        title: `Vào lệnh ${dirLabel} với Stop Loss ${slLabel} (đã điều chỉnh +${slAdj}%)`,
-        description: `Entry: ${entry?.toFixed(2) || "N/A"} (${entryPctFromPrice}%)`,
+        title: step4Title,
+        description: step4Description,
         status: step4Status,
       },
     ];
@@ -677,5 +712,11 @@ export class SignalEngine {
     }
 
     return details;
+  }
+
+  private formatEntryDistance(entry: number, currentPrice: number): string {
+    const raw = ((entry - currentPrice) / currentPrice) * 100;
+    const normalized = Math.abs(raw) < 0.05 ? 0 : raw;
+    return normalized.toFixed(1);
   }
 }
