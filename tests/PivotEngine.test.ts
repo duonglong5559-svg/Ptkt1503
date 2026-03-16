@@ -88,4 +88,32 @@ export function testPivotEngine(assert: AssertFn) {
     assert(result.nearestSupport < 5120, "Nearest support is below current price");
     assert(result.nearestResistance > 5120, "Nearest resistance is above current price");
   }
+
+  // Test: no resistance above highest pivot level
+  {
+    const result = engine.analyze({
+      symbol: "BTCUSDT",
+      sourceTimeframe: "1d",
+      high: 110,
+      low: 90,
+      close: 100,
+      currentPrice: 135,
+    });
+    assert(result.nearestResistance === undefined, "No nearest resistance when price is above r3");
+    assert(result.nearestSupport !== undefined && result.nearestSupport < 135, "Nearest support still exists below price");
+  }
+
+  // Test: no support below lowest pivot level
+  {
+    const result = engine.analyze({
+      symbol: "BTCUSDT",
+      sourceTimeframe: "1d",
+      high: 110,
+      low: 90,
+      close: 100,
+      currentPrice: 65,
+    });
+    assert(result.nearestSupport === undefined, "No nearest support when price is below s3");
+    assert(result.nearestResistance !== undefined && result.nearestResistance > 65, "Nearest resistance still exists above price");
+  }
 }

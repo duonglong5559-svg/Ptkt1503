@@ -35,10 +35,12 @@ export class SignalEngine {
     }
 
     const state = this.resolveState(input, previousSignal);
-    const direction = this.resolveDirection(state);
+    const invalidationReason = this.checkInvalidation(input, state, previousSignal);
+    const finalState: SignalState = invalidationReason ? "invalidated" : state;
+    const direction = this.resolveDirection(finalState);
 
-    const entryLong = this.computeEntryLong(input);
-    const entryShort = this.computeEntryShort(input);
+    const entryLong = direction === "long" ? this.computeEntryLong(input) : undefined;
+    const entryShort = direction === "short" ? this.computeEntryShort(input) : undefined;
     const stopLoss = this.computeStopLoss(input, direction, entryLong, entryShort);
     const takeProfit = this.computeTakeProfit(input, direction, entryLong, entryShort, stopLoss);
     const target = this.computeTarget(input, direction, entryLong, entryShort, takeProfit);
@@ -49,9 +51,6 @@ export class SignalEngine {
       stopLoss,
       takeProfit
     );
-
-    const invalidationReason = this.checkInvalidation(input, state, previousSignal);
-    const finalState: SignalState = invalidationReason ? "invalidated" : state;
 
     const summaryText = this.buildSummary(input, finalState, direction, entryLong, entryShort, target);
     const detailText = this.buildDetails(input, finalState, direction, entryLong, entryShort, stopLoss, takeProfit, target);
@@ -121,62 +120,74 @@ export class SignalEngine {
       bigFramesBullish >= bigFrameMinRequired &&
       !pivotBlocksBullish;
 
-    const hasResistanceNearby = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("resistance") && t.normalizedDistance <= 1.2
+    const activeSupports = trendlineOutput.activeTrendlines.filter(
+      (t) => t.type.includes("support") && !t.isBroken
+    );
+    const activeResistances = trendlineOutput.activeTrendlines.filter(
+      (t) => t.type.includes("resistance") && !t.isBroken
+    );
+    const brokenSupports = trendlineOutput.activeTrendlines.filter(
+      (t) => t.type.includes("support") && t.isBroken
     );
 
-    const hasSupportNearby = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("support") && t.normalizedDistance <= 1.2
+    const hasResistanceNearby = activeResistances.some((t) => t.normalizedDistance <= 1.2);
+    const hasSupportNearby = activeSupports.some((t) => t.normalizedDistance <= 1.2);
+    const supportInTouchZone = activeSupports.some(
+      (t) => t.proximity === "touch_zone" || t.proximity === "reaction_zone"
     );
+    const resistanceInTouchZone = activeResistances.some(
+      (t) => t.proximity === "touch_zone" || t.proximity === "reaction_zone"
+    );
+    const hasBrokenSupportBreakdown = brokenSupports.some((t) => t.normalizedDistance <= 2);
 
-    const supportInTouchZone = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("support") && (t.proximity === "touch_zone" || t.proximity === "reaction_zone")
-    );
-    const resistanceInTouchZone = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("resistance") && (t.proximity === "touch_zone" || t.proximity === "reaction_zone")
-    );
+    const nearPrevShortEntry = prev?.entryShort
+      ? Math.abs(currentPrice - prev.entryShort) / currentPrice < 0.002
+      : false;
+    const nearPrevLongEntry = prev?.entryLong
+      ? Math.abs(currentPrice - prev.entryLong) / currentPrice < 0.002
+      : false;
 
-    const hasBrokenSupportBelow = trendlineOutput.activeTrendlines.some(
-      (t) => t.type.includes("support") && t.isBroken && t.normalizedDistance <= 2
-    );
+    const shortReady = resistanceInTouchZone || (hasBrokenSupportBreakdown && globalShortPercent >= 65);
+    const longReady = supportInTouchZone;
 
-    if (prev && canWatchShort && globalShortPercent >= READY_THRESHOLD) {
-      if (prev.state === "ready_short" || prev.state === "triggered_short") {
-        if (input.nearestResistance && currentPrice >= input.nearestResistance) {
-          return "triggered_short";
-        }
-        if (hasResistanceNearby && prev.entryShort && Math.abs(currentPrice - prev.entryShort) / currentPrice < 0.002) {
-          return "triggered_short";
-        }
-      }
-      if (prev.state === "triggered_short" && prev.entryShort && currentPrice < prev.entryShort) {
-        return "active_short";
-      }
+    const shortTriggered =
+      shortReady &&
+      (
+        resistanceInTouchZone ||
+        nearPrevShortEntry ||
+        (input.nearestResistance !== undefined && currentPrice >= input.nearestResistance)
+      );
+    const longTriggered =
+      longReady &&
+      (
+        supportInTouchZone ||
+        nearPrevLongEntry ||
+        (input.nearestSupport !== undefined && currentPrice <= input.nearestSupport)
+      );
+
+    if (prev?.state === "active_short" && prev.entryShort) {
+      return "active_short";
     }
-
-    if (prev && canWatchLong && globalLongPercent >= READY_THRESHOLD) {
-      if (prev.state === "ready_long" || prev.state === "triggered_long") {
-        if (input.nearestSupport && currentPrice <= input.nearestSupport) {
-          return "triggered_long";
-        }
-        if (hasSupportNearby && prev.entryLong && Math.abs(currentPrice - prev.entryLong) / currentPrice < 0.002) {
-          return "triggered_long";
-        }
-      }
-      if (prev.state === "triggered_long" && prev.entryLong && currentPrice > prev.entryLong) {
-        return "active_long";
-      }
+    if (prev?.state === "active_long" && prev.entryLong) {
+      return "active_long";
+    }
+    if (prev?.state === "triggered_short" && prev.entryShort && currentPrice < prev.entryShort) {
+      return "active_short";
+    }
+    if (prev?.state === "triggered_long" && prev.entryLong && currentPrice > prev.entryLong) {
+      return "active_long";
     }
 
     if (canWatchShort && globalShortPercent >= READY_THRESHOLD) {
-      if (resistanceInTouchZone) return "ready_short";
-      if (hasBrokenSupportBelow && globalShortPercent >= 65) return "ready_short";
+      if (shortTriggered) return "triggered_short";
+      if (shortReady) return "ready_short";
       if (hasResistanceNearby) return "watch_short";
       return "watch_short";
     }
 
     if (canWatchLong && globalLongPercent >= READY_THRESHOLD) {
-      if (supportInTouchZone) return "ready_long";
+      if (longTriggered) return "triggered_long";
+      if (longReady) return "ready_long";
       if (hasSupportNearby) return "watch_long";
       return "watch_long";
     }
@@ -215,12 +226,12 @@ export class SignalEngine {
     const effectiveAtr = atr || currentPrice * 0.005;
 
     const primarySup = trendlineOutput.primarySupport;
-    if (primarySup && primarySup.projectedPriceNow > 0 && primarySup.projectedPriceNow < currentPrice) {
+    if (primarySup && !primarySup.isBroken && primarySup.projectedPriceNow > 0 && primarySup.projectedPriceNow < currentPrice) {
       return Math.round(primarySup.projectedPriceNow * 100) / 100;
     }
 
     const candidates: number[] = [];
-    if (nearestSupport && nearestSupport < currentPrice) candidates.push(nearestSupport);
+    if (nearestSupport !== undefined && nearestSupport < currentPrice) candidates.push(nearestSupport);
     if (pivotRelation.state === "below_pivot" && pivotRelation.levels.s1 < currentPrice) {
       candidates.push(pivotRelation.levels.s1);
     }
@@ -240,12 +251,12 @@ export class SignalEngine {
     const effectiveAtr = atr || currentPrice * 0.005;
 
     const primaryRes = trendlineOutput.primaryResistance;
-    if (primaryRes && primaryRes.projectedPriceNow > 0 && primaryRes.projectedPriceNow > currentPrice) {
+    if (primaryRes && !primaryRes.isBroken && primaryRes.projectedPriceNow > 0 && primaryRes.projectedPriceNow > currentPrice) {
       return Math.round(primaryRes.projectedPriceNow * 100) / 100;
     }
 
     const candidates: number[] = [];
-    if (nearestResistance && nearestResistance > currentPrice) candidates.push(nearestResistance);
+    if (nearestResistance !== undefined && nearestResistance > currentPrice) candidates.push(nearestResistance);
     if (pivotRelation.levels.r1 > currentPrice) candidates.push(pivotRelation.levels.r1);
     if ((pivotRelation.state === "above_pivot" || pivotRelation.state === "approaching_pivot_from_below") && pivotRelation.levels.pivot > currentPrice) {
       candidates.push(pivotRelation.levels.pivot);
@@ -307,7 +318,7 @@ export class SignalEngine {
 
     if (direction === "long") {
       const candidates: number[] = [];
-      if (nearestResistance) candidates.push(nearestResistance);
+      if (entryLong && nearestResistance !== undefined && nearestResistance > entryLong) candidates.push(nearestResistance);
       if (pivotRelation.levels.r1 > (entryLong || 0)) {
         candidates.push(pivotRelation.levels.r1);
       }
@@ -329,7 +340,7 @@ export class SignalEngine {
 
     if (direction === "short") {
       const candidates: number[] = [];
-      if (nearestSupport) candidates.push(nearestSupport);
+      if (entryShort && nearestSupport !== undefined && nearestSupport < entryShort) candidates.push(nearestSupport);
       if (pivotRelation.levels.s1 < (entryShort || Infinity)) {
         candidates.push(pivotRelation.levels.s1);
       }
@@ -389,9 +400,16 @@ export class SignalEngine {
     tp?: number
   ): number | undefined {
     if (!entry || !sl || !tp) return undefined;
+    if (direction === "long") {
+      if (sl >= entry || tp <= entry) return undefined;
+    } else if (direction === "short") {
+      if (sl <= entry || tp >= entry) return undefined;
+    } else {
+      return undefined;
+    }
     const risk = Math.abs(entry - sl);
     const reward = Math.abs(tp - entry);
-    if (risk === 0) return undefined;
+    if (risk === 0 || reward <= 0) return undefined;
     return Math.round((reward / risk) * 100) / 100;
   }
 

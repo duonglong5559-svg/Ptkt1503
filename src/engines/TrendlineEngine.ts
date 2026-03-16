@@ -46,8 +46,8 @@ export class TrendlineEngine {
       .filter((t) => t.distanceToPricePercent < 2.0 && !activeTrendlines.includes(t) && t.strength >= 20)
       .slice(0, 2);
 
-    const primarySupport = activeTrendlines.find((t) => t.type.includes("support") && t.tier === "primary");
-    const primaryResistance = activeTrendlines.find((t) => t.type.includes("resistance") && t.tier === "primary");
+    const primarySupport = activeTrendlines.find((t) => t.type.includes("support") && !t.isBroken && t.tier === "primary");
+    const primaryResistance = activeTrendlines.find((t) => t.type.includes("resistance") && !t.isBroken && t.tier === "primary");
 
     return {
       symbol, timeframe, activeTrendlines, nearbyTrendlines,
@@ -199,12 +199,17 @@ export class TrendlineEngine {
   }
 
   private assignTiers(lines: Trendline[]): void {
-    let supPrimary = false, resPrimary = false;
     for (const line of lines) {
-      const isSup = line.type.includes("support");
-      if (isSup && !supPrimary) { line.tier = "primary"; supPrimary = true; }
-      else if (!isSup && !resPrimary) { line.tier = "primary"; resPrimary = true; }
-      else line.tier = "secondary";
+      line.tier = "secondary";
+    }
+
+    const primarySupport = lines.find((line) => line.type.includes("support") && !line.isBroken);
+    const primaryResistance = lines.find((line) => line.type.includes("resistance") && !line.isBroken);
+
+    if (primarySupport) primarySupport.tier = "primary";
+    if (primaryResistance) primaryResistance.tier = "primary";
+    if (!primarySupport && !primaryResistance && lines[0]) {
+      lines[0].tier = "primary";
     }
   }
 

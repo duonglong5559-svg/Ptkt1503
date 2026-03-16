@@ -21,9 +21,9 @@ export type PivotRelation = {
   state: PivotState;
   distanceToPivot: number;
   distanceToPivotPercent: number;
-  nearestResistance: number;
-  nearestSupport: number;
-  targetHint: number;
+  nearestResistance?: number;
+  nearestSupport?: number;
+  targetHint?: number;
   directionBias: "bullish" | "bearish" | "neutral";
   narrative: string;
 };

@@ -103,7 +103,7 @@ export class PivotEngine {
     }
   }
 
-  private findNearestAbove(price: number, levels: PivotLevels): number {
+  private findNearestAbove(price: number, levels: PivotLevels): number | undefined {
     const allLevels = [
       levels.s3,
       levels.s2,
@@ -117,10 +117,10 @@ export class PivotEngine {
     for (const lvl of allLevels) {
       if (lvl > price) return lvl;
     }
-    return allLevels[allLevels.length - 1];
+    return undefined;
   }
 
-  private findNearestBelow(price: number, levels: PivotLevels): number {
+  private findNearestBelow(price: number, levels: PivotLevels): number | undefined {
     const allLevels = [
       levels.s3,
       levels.s2,
@@ -134,7 +134,7 @@ export class PivotEngine {
     for (const lvl of allLevels) {
       if (lvl < price) return lvl;
     }
-    return allLevels[allLevels.length - 1];
+    return undefined;
   }
 
   private computeTargetHint(
@@ -142,29 +142,32 @@ export class PivotEngine {
     levels: PivotLevels,
     state: PivotState,
     momentum?: "rising" | "falling" | "flat"
-  ): number {
+  ): number | undefined {
+    const nearestAbove = this.findNearestAbove(price, levels);
+    const nearestBelow = this.findNearestBelow(price, levels);
+
     switch (state) {
       case "below_pivot":
       case "approaching_pivot_from_below":
-        return levels.pivot;
+        return nearestAbove;
 
       case "above_pivot":
-        if (momentum === "rising") return levels.r1;
-        return levels.pivot;
+        if (momentum === "rising") return nearestAbove;
+        return nearestBelow;
 
       case "approaching_pivot_from_above":
-        return levels.pivot;
+        return nearestBelow;
 
       case "at_pivot":
-        if (momentum === "rising") return levels.r1;
-        if (momentum === "falling") return levels.s1;
+        if (momentum === "rising") return nearestAbove;
+        if (momentum === "falling") return nearestBelow;
         return levels.pivot;
 
       case "rejected_from_pivot":
-        return price > levels.pivot ? levels.r1 : levels.s1;
+        return price > levels.pivot ? nearestAbove : nearestBelow;
 
       default:
-        return levels.pivot;
+        return undefined;
     }
   }
 
@@ -195,18 +198,18 @@ export class PivotEngine {
     state: PivotState,
     levels: PivotLevels,
     price: number,
-    target: number,
+    target: number | undefined,
     bias: "bullish" | "bearish" | "neutral"
   ): string {
     const pivotStr = levels.pivot.toFixed(2);
-    const targetStr = target.toFixed(2);
+    const targetText = target !== undefined ? ` Mục tiêu gần: ${target.toFixed(2)}.` : "";
 
     switch (state) {
       case "above_pivot":
-        return `Giá đang ở phía trên Pivot (${pivotStr}), bias thiên bullish. Mục tiêu gần: ${targetStr}.`;
+        return `Giá đang ở phía trên Pivot (${pivotStr}), bias thiên bullish.${targetText}`;
 
       case "below_pivot":
-        return `Giá đang ở phía dưới Pivot (${pivotStr}), bias thiên bearish. Mục tiêu gần: ${targetStr}.`;
+        return `Giá đang ở phía dưới Pivot (${pivotStr}), bias thiên bearish.${targetText}`;
 
       case "approaching_pivot_from_below":
         return `Giá đang ở phía dưới Pivot (${pivotStr}), có xu hướng tiến về Pivot.`;
@@ -218,7 +221,7 @@ export class PivotEngine {
         return `Giá đang sát Pivot (${pivotStr}), thị trường lưỡng lự. Theo dõi phản ứng tại vùng này.`;
 
       case "rejected_from_pivot":
-        return `Giá vừa bị từ chối tại Pivot (${pivotStr}). Mục tiêu: ${targetStr}.`;
+        return `Giá vừa bị từ chối tại Pivot (${pivotStr}).${targetText}`;
 
       default:
         return `Pivot hiện tại: ${pivotStr}.`;

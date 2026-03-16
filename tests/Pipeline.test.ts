@@ -102,6 +102,48 @@ export function testPipeline(assert: AssertFn) {
     }
   }
 
+  // Test: tick update refreshes signal state transitions
+  {
+    const pipeline = new Pipeline("BTCUSDT");
+    const candles1h = generateTrendCandles("down", 80, 5300, 2);
+    const candles4h = generateTrendCandles("down", 50, 5400, 4);
+    const candles1d = generateTrendCandles("down", 30, 5500, 8);
+    pipeline.initializeCache("1h", candles1h);
+    pipeline.initializeCache("4h", candles4h);
+    pipeline.initializeCache("1d", candles1d);
+
+    const price = candles1h[candles1h.length - 1].close;
+    pipeline.runFullAnalysis(price);
+    const state = pipeline.getState();
+    state.lastSignal = {
+      ...state.lastSignal!,
+      state: "triggered_short",
+      direction: "short",
+      entryShort: price - 1,
+      stopLoss: price + 10,
+    };
+
+    const tickPayload = pipeline.runTickUpdate(price - 3);
+    assert(tickPayload !== null, "Tick payload exists for signal refresh test");
+    assert(tickPayload?.signal.state === "active_short", `Tick update promotes triggered short to active (got ${tickPayload?.signal.state})`);
+  }
+
+  // Test: missing higher-timeframe pivot data degrades to neutral pivot
+  {
+    const pipeline = new Pipeline("BTCUSDT");
+    const candles1h = generateTrendCandles("down", 80, 5300, 2);
+    pipeline.initializeCache("1h", candles1h);
+
+    pipeline.runFullAnalysis(candles1h[candles1h.length - 1].close);
+    const tfResult = pipeline.getState().timeframeResults.get("1h");
+
+    assert(tfResult?.pivotRelation.directionBias === "neutral", "Missing pivot source keeps pivot bias neutral");
+    assert(
+      tfResult?.pivotRelation.narrative.includes("Thiếu dữ liệu Pivot"),
+      "Missing pivot source emits degraded pivot narrative"
+    );
+  }
+
   // Test: range market
   {
     const pipeline = new Pipeline("XAUUSD");
