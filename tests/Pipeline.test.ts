@@ -139,7 +139,7 @@ export function testPipeline(assert: AssertFn) {
 
     assert(tfResult?.pivotRelation.directionBias === "neutral", "Missing pivot source keeps pivot bias neutral");
     assert(
-      tfResult?.pivotRelation.narrative.includes("Thiếu dữ liệu Pivot"),
+      !!tfResult?.pivotRelation.narrative.includes("Thiếu dữ liệu Pivot"),
       "Missing pivot source emits degraded pivot narrative"
     );
   }
