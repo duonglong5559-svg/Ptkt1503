@@ -210,55 +210,126 @@ export class SignalEngine {
     return scores.filter((s) => bigFrames.includes(s.timeframe)).length;
   }
 
+  private rankEntryCandidate(
+    price: number,
+    currentPrice: number,
+    atr: number,
+    basePriority: number
+  ): number {
+    const atrDistance = Math.abs(currentPrice - price) / atr;
+    return Math.round((basePriority - atrDistance * 8) * 100) / 100;
+  }
+
+  private pushLongCandidate(
+    candidates: { price: number; score: number }[],
+    price: number | undefined,
+    currentPrice: number,
+    atr: number,
+    basePriority: number
+  ): void {
+    if (!price || price <= 0 || price >= currentPrice) return;
+    candidates.push({
+      price: Math.round(price * 100) / 100,
+      score: this.rankEntryCandidate(price, currentPrice, atr, basePriority),
+    });
+  }
+
+  private pushShortCandidate(
+    candidates: { price: number; score: number }[],
+    price: number | undefined,
+    currentPrice: number,
+    atr: number,
+    basePriority: number
+  ): void {
+    if (!price || price <= 0 || price <= currentPrice) return;
+    candidates.push({
+      price: Math.round(price * 100) / 100,
+      score: this.rankEntryCandidate(price, currentPrice, atr, basePriority),
+    });
+  }
+
+  private selectBestEntry(
+    candidates: { price: number; score: number }[],
+    fallback: number
+  ): number {
+    if (candidates.length === 0) return Math.round(fallback * 100) / 100;
+
+    candidates.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return Math.abs(a.price - fallback) - Math.abs(b.price - fallback);
+    });
+
+    const deduped: { price: number; score: number }[] = [];
+    for (const candidate of candidates) {
+      const exists = deduped.some((item) => Math.abs(item.price - candidate.price) / candidate.price < 0.0015);
+      if (!exists) deduped.push(candidate);
+    }
+
+    return Math.round(deduped[0].price * 100) / 100;
+  }
+
   private computeEntryLong(input: SignalEngineInput): number | undefined {
     const { currentPrice, nearestSupport, pivotRelation, atr, trendlineOutput } = input;
     const effectiveAtr = atr || currentPrice * 0.005;
+    const fallback = currentPrice - effectiveAtr * 0.65;
+    const candidates: { price: number; score: number }[] = [];
+
+    this.pushLongCandidate(candidates, nearestSupport, currentPrice, effectiveAtr, 100);
+    this.pushLongCandidate(candidates, pivotRelation.levels.s1, currentPrice, effectiveAtr, 96);
+    if (pivotRelation.levels.pivot < currentPrice) {
+      this.pushLongCandidate(
+        candidates,
+        pivotRelation.levels.pivot,
+        currentPrice,
+        effectiveAtr,
+        pivotRelation.state === "above_pivot" ? 104 : 88
+      );
+    }
 
     const primarySup = trendlineOutput.primarySupport;
-    if (primarySup && primarySup.projectedPriceNow > 0 && primarySup.projectedPriceNow < currentPrice) {
-      return Math.round(primarySup.projectedPriceNow * 100) / 100;
+    if (primarySup && !primarySup.isBroken && primarySup.normalizedDistance <= 2.4) {
+      this.pushLongCandidate(candidates, primarySup.projectedPriceNow, currentPrice, effectiveAtr, 98);
     }
 
-    const candidates: number[] = [];
-    if (nearestSupport && nearestSupport < currentPrice) candidates.push(nearestSupport);
-    if (pivotRelation.state === "below_pivot" && pivotRelation.levels.s1 < currentPrice) {
-      candidates.push(pivotRelation.levels.s1);
+    for (const line of trendlineOutput.activeTrendlines) {
+      if (!line.type.includes("support") || line.isBroken || line.normalizedDistance > 2.2) continue;
+      const basePriority = line.tier === "primary" ? 95 : 86;
+      this.pushLongCandidate(candidates, line.projectedPriceNow, currentPrice, effectiveAtr, basePriority);
     }
 
-    const nearTL = trendlineOutput.activeTrendlines.find(
-      (t) => t.type.includes("support") && !t.isBroken && t.projectedPriceNow > 0 && t.projectedPriceNow < currentPrice && t.normalizedDistance < 2
-    );
-    if (nearTL) candidates.push(nearTL.projectedPriceNow);
-
-    if (candidates.length === 0) return Math.round((currentPrice - effectiveAtr * 0.8) * 100) / 100;
-    candidates.sort((a, b) => b - a);
-    return Math.round(candidates[0] * 100) / 100;
+    return this.selectBestEntry(candidates, fallback);
   }
 
   private computeEntryShort(input: SignalEngineInput): number | undefined {
     const { currentPrice, nearestResistance, pivotRelation, atr, trendlineOutput } = input;
     const effectiveAtr = atr || currentPrice * 0.005;
+    const fallback = currentPrice + effectiveAtr * 0.65;
+    const candidates: { price: number; score: number }[] = [];
+
+    this.pushShortCandidate(candidates, nearestResistance, currentPrice, effectiveAtr, 100);
+    this.pushShortCandidate(candidates, pivotRelation.levels.r1, currentPrice, effectiveAtr, 96);
+    if (pivotRelation.levels.pivot > currentPrice) {
+      this.pushShortCandidate(
+        candidates,
+        pivotRelation.levels.pivot,
+        currentPrice,
+        effectiveAtr,
+        pivotRelation.state === "below_pivot" ? 104 : 88
+      );
+    }
 
     const primaryRes = trendlineOutput.primaryResistance;
-    if (primaryRes && primaryRes.projectedPriceNow > 0 && primaryRes.projectedPriceNow > currentPrice) {
-      return Math.round(primaryRes.projectedPriceNow * 100) / 100;
+    if (primaryRes && !primaryRes.isBroken && primaryRes.normalizedDistance <= 2.4) {
+      this.pushShortCandidate(candidates, primaryRes.projectedPriceNow, currentPrice, effectiveAtr, 98);
     }
 
-    const candidates: number[] = [];
-    if (nearestResistance && nearestResistance > currentPrice) candidates.push(nearestResistance);
-    if (pivotRelation.levels.r1 > currentPrice) candidates.push(pivotRelation.levels.r1);
-    if ((pivotRelation.state === "above_pivot" || pivotRelation.state === "approaching_pivot_from_below") && pivotRelation.levels.pivot > currentPrice) {
-      candidates.push(pivotRelation.levels.pivot);
+    for (const line of trendlineOutput.activeTrendlines) {
+      if (!line.type.includes("resistance") || line.isBroken || line.normalizedDistance > 2.2) continue;
+      const basePriority = line.tier === "primary" ? 95 : 86;
+      this.pushShortCandidate(candidates, line.projectedPriceNow, currentPrice, effectiveAtr, basePriority);
     }
 
-    const nearTL = trendlineOutput.activeTrendlines.find(
-      (t) => t.type.includes("resistance") && !t.isBroken && t.projectedPriceNow > currentPrice && t.normalizedDistance < 2
-    );
-    if (nearTL) candidates.push(nearTL.projectedPriceNow);
-
-    if (candidates.length === 0) return Math.round((currentPrice + effectiveAtr * 0.8) * 100) / 100;
-    candidates.sort((a, b) => a - b);
-    return Math.round(candidates[0] * 100) / 100;
+    return this.selectBestEntry(candidates, fallback);
   }
 
   private computeStopLoss(
