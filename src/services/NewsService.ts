@@ -55,6 +55,16 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
 function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
@@ -111,7 +121,7 @@ export class NewsService {
 
   private async fetchCryptoCompare(): Promise<NewsItem[]> {
     const res = await this.fetchJson(CRYPTO_COMPARE_URL);
-    const data = await res.json();
+    const data = await res.json() as any;
     const articles = (data.Data || []).slice(0, 8);
 
     return articles.map((a: any, i: number): NewsItem => {
@@ -142,31 +152,35 @@ export class NewsService {
   }
 
   private parseRSS(xmlText: string, channel: string): NewsItem[] {
-    if (typeof DOMParser === "undefined") return [];
+    const itemBlocks = Array.from(xmlText.matchAll(/<item\b[\s\S]*?<\/item>/gi))
+      .map((match) => match[0])
+      .slice(0, 5);
 
-    const parser = new DOMParser();
-    const xml = parser.parseFromString(xmlText, "application/xml");
-    const items = Array.from(xml.querySelectorAll("item")).slice(0, 5);
+    const extractTag = (block: string, tagName: string): string => {
+      const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "i");
+      const match = block.match(regex);
+      return match ? decodeXmlEntities(match[1]).trim() : "";
+    };
 
-    return items.map((item, index): NewsItem => {
-      const title = item.querySelector("title")?.textContent?.trim() || `${channel} article ${index + 1}`;
+    const extractAllTags = (block: string, tagName: string): string[] => {
+      const regex = new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "gi");
+      return Array.from(block.matchAll(regex)).map((match) => decodeXmlEntities(match[1]).trim());
+    };
+
+    return itemBlocks.map((item, index): NewsItem => {
+      const title = extractTag(item, "title") || `${channel} article ${index + 1}`;
       const summary = stripHtml(
-        item.querySelector("description")?.textContent ||
-        item.querySelector("content\\:encoded")?.textContent ||
-        ""
+        extractTag(item, "description") ||
+        extractTag(item, "content:encoded")
       ).slice(0, 260);
       const publishedRaw =
-        item.querySelector("pubDate")?.textContent ||
-        item.querySelector("dc\\:date")?.textContent ||
+        extractTag(item, "pubDate") ||
+        extractTag(item, "dc:date") ||
         "";
       const publishedAt = Date.parse(publishedRaw) || Date.now() - index * 60000;
-      const url = item.querySelector("link")?.textContent?.trim() || undefined;
-      const categoryText = Array.from(item.querySelectorAll("category"))
-        .map((node) => node.textContent || "")
-        .join(" ");
-      const source =
-        item.querySelector("source")?.textContent?.trim() ||
-        channel;
+      const url = extractTag(item, "link") || undefined;
+      const categoryText = extractAllTags(item, "category").join(" ");
+      const source = extractTag(item, "source") || channel;
       const { sentiment, confidence } = analyzeSentiment(title, summary);
 
       return {
