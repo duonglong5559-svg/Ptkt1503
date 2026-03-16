@@ -304,11 +304,11 @@ function getTrendlineStyle(tl: Trendline): { color: string; width: number } {
   const isSup = tl.type.includes("support");
   const vs = tl.visualState;
 
-  if (vs === "hot") return { color: isSup ? "rgba(0,255,200,0.95)" : "rgba(255,50,100,0.95)", width: 3 };
-  if (vs === "near") return { color: isSup ? "rgba(0,200,160,0.75)" : "rgba(220,80,120,0.75)", width: 2 };
-  if (vs === "break") return { color: isSup ? "rgba(255,120,50,0.85)" : "rgba(50,200,180,0.85)", width: 2 };
-  if (vs === "retest") return { color: isSup ? "rgba(0,220,180,0.8)" : "rgba(220,60,100,0.8)", width: 2 };
-  return { color: "rgba(150,150,150,0.4)", width: 1 };
+  if (vs === "hot") return { color: isSup ? "rgba(0,255,200,0.95)" : "rgba(255,50,100,0.95)", width: 4 };
+  if (vs === "near") return { color: isSup ? "rgba(0,200,160,0.75)" : "rgba(220,80,120,0.75)", width: 3 };
+  if (vs === "break") return { color: isSup ? "rgba(255,120,50,0.85)" : "rgba(50,200,180,0.85)", width: 3 };
+  if (vs === "retest") return { color: isSup ? "rgba(0,220,180,0.8)" : "rgba(220,60,100,0.8)", width: 3 };
+  return { color: "rgba(150,150,150,0.4)", width: 2 };
 }
 
 function renderTrendlines(trendlines: Trendline[], candles: Candle[]) {
